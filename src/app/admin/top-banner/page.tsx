@@ -218,31 +218,33 @@ export default function AdminTopBannerPage() {
                     : "No active banner to preview"}
             </div>
 
-            {/* DRAG LIST */}
-            {loading ? (
-                <div className="text-center py-10 text-gray-400">
-                    Loading banners...
-                </div>
-            ) : (
-                <DndContext
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
-                >
-                    <SortableContext
-                        items={banners.map((b) => b._id)}
-                        strategy={verticalListSortingStrategy}
+            <div className="space-y-4">
+                {/* DRAG LIST */}
+                {loading ? (
+                    <div className="text-center py-10 text-gray-400">
+                        Loading banners...
+                    </div>
+                ) : (
+                    <DndContext
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
                     >
-                        {banners.map((banner) => (
-                            <SortableItem
-                                key={banner._id}
-                                banner={banner}
-                                toggleActive={toggleActive}
-                                deleteBanner={deleteBanner}
-                            />
-                        ))}
-                    </SortableContext>
-                </DndContext>
-            )}
+                        <SortableContext
+                            items={banners.map((b) => b._id)}
+                            strategy={verticalListSortingStrategy}
+                        >
+                            {banners.map((banner) => (
+                                <SortableItem
+                                    key={banner._id}
+                                    banner={banner}
+                                    toggleActive={toggleActive}
+                                    deleteBanner={deleteBanner}
+                                />
+                            ))}
+                        </SortableContext>
+                    </DndContext>
+                )}
+            </div>
         </div>
     );
 }
