@@ -5,12 +5,10 @@ import api from "@/lib/api";
 import { getErrorMessage } from "@/lib/getErrorMessage";
 
 const TEA_TYPES = [
-  "Green",
-  "Black",
-  "Oolong",
-  "White",
-  "Herbal",
-  "Other",
+  "Black Tea",
+  "Green Tea",
+  "Organic Tea",
+  "Speciality Tea",
 ];
 
 const TAG_OPTIONS = [
@@ -53,7 +51,6 @@ export default function StepProductInfo({
   const [name, setName] = useState("");
   const [sku, setSku] = useState("");
   const [teaType, setTeaType] = useState("");
-  const [customTeaType, setCustomTeaType] = useState("");
   const [description, setDescription] = useState("");
   const [bestFor, setBestFor] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -73,12 +70,8 @@ export default function StepProductInfo({
       setTeaType(
         TEA_TYPES.includes(initialData.teaType)
           ? initialData.teaType
-          : "Other"
+          : ""
       );
-
-      if (!TEA_TYPES.includes(initialData.teaType)) {
-        setCustomTeaType(initialData.teaType);
-      }
 
       setDescription(initialData.description || "");
       setBestFor(initialData.bestFor.join(", "));
@@ -93,10 +86,9 @@ export default function StepProductInfo({
   const isValid = useMemo(() => {
     if (!name.trim()) return false;
     if (!isEdit && !sku.trim()) return false;
-    if (!teaType) return false;
-    if (teaType === "Other" && !customTeaType.trim()) return false;
+    if (!TEA_TYPES.includes(teaType)) return false;
     return true;
-  }, [name, sku, teaType, customTeaType, isEdit]);
+  }, [name, sku, teaType, isEdit]);
 
   /* -------------------------------
      Submit
@@ -111,10 +103,7 @@ export default function StepProductInfo({
       const payload = {
         name: name.trim(),
         description: description.trim() || undefined,
-        teaType:
-          teaType === "Other"
-            ? customTeaType.trim()
-            : teaType,
+        teaType,
         bestFor: bestFor
           .split(",")
           .map((v) => v.trim())
@@ -231,18 +220,7 @@ export default function StepProductInfo({
           </select>
         </div>
 
-        {teaType === "Other" ? (
-          <input
-            value={customTeaType}
-            onChange={(e) =>
-              setCustomTeaType(e.target.value)
-            }
-            placeholder="Custom tea type"
-            className="w-full px-4 py-2.5 border rounded-lg"
-          />
-        ) : (
-          <div />
-        )}
+        <div />
       </div>
 
       {/* Best For */}

@@ -15,6 +15,13 @@ const TAG_OPTIONS = [
   "SEASONAL",
 ] as const;
 
+const TEA_TYPES = [
+  "Black Tea",
+  "Green Tea",
+  "Organic Tea",
+  "Speciality Tea",
+];
+
 type ProductStatus = "DRAFT" | "ACTIVE" | "INACTIVE";
 
 interface Product {
@@ -131,7 +138,7 @@ export default function EditProductPage() {
 
           <button
             onClick={saveChanges}
-            disabled={saving}
+            disabled={saving || !TEA_TYPES.includes(product.teaType)}
             className="px-5 py-2.5 rounded-lg bg-(--color-brand-primary) text-white disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
@@ -154,15 +161,27 @@ export default function EditProductPage() {
             placeholder="Product name"
           />
 
-          <input
-            value={product.teaType}
+          <select
+            value={TEA_TYPES.includes(product.teaType) ? product.teaType : ""}
             onChange={(e) =>
               setProduct({ ...product, teaType: e.target.value })
             }
-            className="px-4 py-2.5 border rounded-lg"
-            placeholder="Tea type"
-          />
+            className="px-4 py-2.5 border rounded-lg bg-white"
+          >
+            <option value="">Select tea type</option>
+            {TEA_TYPES.map((teaType) => (
+              <option key={teaType} value={teaType}>
+                {teaType}
+              </option>
+            ))}
+          </select>
         </div>
+
+        {!TEA_TYPES.includes(product.teaType) && (
+          <p className="text-xs text-warning">
+            Choose one of the supported tea types before saving.
+          </p>
+        )}
 
         {/* Description */}
         <textarea
