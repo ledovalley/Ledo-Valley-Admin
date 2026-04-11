@@ -4,6 +4,7 @@ import { useState } from "react";
 import api from "@/lib/api";
 import { AdminProduct } from "@/app/admin/products/page";
 import ProductStatusBadge from "./ProductStatusBadge";
+import { getErrorMessage } from "@/lib/getErrorMessage";
 
 interface Props {
   products: AdminProduct[];
@@ -37,6 +38,8 @@ export default function ProductsTable({
       setBusyId(id);
       await api.delete(`/admin/products/${id}`);
       onRefresh();
+    } catch (error) {
+      alert(getErrorMessage(error));
     } finally {
       setBusyId(null);
     }

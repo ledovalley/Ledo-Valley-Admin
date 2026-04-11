@@ -4,6 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import ProductStatusBadge from "@/components/admin/products/ProductStatusBadge";
+import { getErrorMessage } from "@/lib/getErrorMessage";
 
 /* -----------------------------
    Types
@@ -134,8 +135,12 @@ export default function ProductViewPage() {
           <button
             onClick={async () => {
               if (!confirm("Delete product permanently?")) return;
-              await api.delete(`/admin/products/${productId}`);
-              router.push("/admin/products");
+              try {
+                await api.delete(`/admin/products/${productId}`);
+                router.push("/admin/products");
+              } catch (error) {
+                alert(getErrorMessage(error));
+              }
             }}
             className="px-5 py-2 hover:cursor-pointer text-sm text-red-600 border border-red-200 rounded-xl hover:bg-red-50 transition"
           >
