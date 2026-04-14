@@ -318,7 +318,7 @@ export default function OrderDetailsPage() {
                             </div>
 
                             <div className="flex justify-between">
-                                <span>GST</span>
+                                <span>GST included</span>
                                 <span>₹{order.gstAmount}</span>
                             </div>
 
