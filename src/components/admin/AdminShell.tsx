@@ -9,26 +9,27 @@ export default function AdminShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="h-screen flex overflow-hidden">
-      
+    <div className="grid h-screen grid-cols-[288px_minmax(0,1fr)] bg-(--color-bg-page)">
       {/* Sidebar */}
-      <div className="w-64 fixed left-0 top-0 h-full z-30">
-        <Sidebar />
-      </div>
+      <aside className="border-r border-black/5 bg-(--color-bg-dark)">
+        <div className="sticky top-0 h-screen">
+          <Sidebar />
+        </div>
+      </aside>
 
-      {/* Right Side */}
-      <div className="flex-1 flex flex-col ml-64">
-
+      {/* Main Column */}
+      <div className="flex min-h-0 flex-col">
         {/* Topbar */}
-        <div className="fixed top-0 left-64 right-0 h-16 z-20">
+        <div className="sticky top-0 z-20">
           <Topbar />
         </div>
 
         {/* Scrollable Content */}
-        <main className="mt-16 h-[calc(100vh-4rem)] overflow-y-auto p-6 bg-(--color-bg-page)">
-          {children}
+        <main className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-400 p-4 sm:p-6 xl:p-8">
+            {children}
+          </div>
         </main>
-
       </div>
     </div>
   );

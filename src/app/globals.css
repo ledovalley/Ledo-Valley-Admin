@@ -22,8 +22,10 @@
 
 @theme {
   /* Core Brand Usage */
-  --color-brand-primary: var(--green-primary); /* Footer / Buttons / H1 */
-  --color-brand-on-dark: var(--cream-bg);      /* Text on dark bg */
+  --color-brand-primary: var(--green-primary);
+  /* Footer / Buttons / H1 */
+  --color-brand-on-dark: var(--cream-bg);
+  /* Text on dark bg */
 
   /* Backgrounds */
   --color-bg-page: var(--cream-bg);
@@ -31,7 +33,8 @@
   --color-bg-dark: var(--green-primary);
 
   /* Text */
-  --color-text-primary: var(--green-primary);  /* Headings / Main text */
+  --color-text-primary: var(--green-primary);
+  /* Headings / Main text */
   --color-text-on-dark: var(--cream-bg);
   --color-text-secondary: var(--gray-secondary);
 
@@ -41,9 +44,11 @@
   --color-separator: var(--olive-muted);
 
   /* UI States */
-  --color-highlight: var(--gray-secondary);    /* Checkboxes / secondary text */
-  --color-warning: var(--red-alert);   
-  --color-highlight: var(--golden);        /* Alerts / ribbons / offers */
+  --color-highlight: var(--gray-secondary);
+  /* Checkboxes / secondary text */
+  --color-warning: var(--red-alert);
+  --color-highlight: var(--golden);
+  /* Alerts / ribbons / offers */
 }
 
 /* ================================
@@ -63,5 +68,17 @@
 @layer utilities {
   .font-playfair {
     font-family: var(--font-display);
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+
+  /* IE and Edge */
+  &::-webkit-scrollbar {
+    display: none;
+    /* Chrome, Safari and Opera */
   }
 }

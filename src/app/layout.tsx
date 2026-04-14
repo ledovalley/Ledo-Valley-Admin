@@ -1,3 +1,4 @@
+import { ToastProvider } from "@/components/ui/ToastProvider";
 import "./globals.css";
 import type { Metadata } from "next";
 
@@ -14,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-(--color-bg-page) text-(--color-text-primary)">
-        {children}
+        <ToastProvider>{children}</ToastProvider>
       </body>
     </html>
   );

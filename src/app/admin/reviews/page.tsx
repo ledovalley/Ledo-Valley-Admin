@@ -24,6 +24,7 @@ export default function AdminReviewsPage() {
   const [search, setSearch] = useState("");
   const [rating, setRating] = useState("");
   const [testimonial, setTestimonial] = useState("");
+  const [activeTab, setActiveTab] = useState<"PENDING" | "VISIBLE">("PENDING");
 
   /* ================= FETCH REVIEWS ================= */
 
@@ -32,7 +33,7 @@ export default function AdminReviewsPage() {
       setLoading(true);
 
       const { data } = await axios.get("/admin/reviews", {
-        params: { search, rating, testimonial },
+        params: { search, rating, testimonial, status: activeTab },
       });
 
       setReviews(data);
@@ -45,7 +46,7 @@ export default function AdminReviewsPage() {
 
   useEffect(() => {
     fetchReviews();
-  }, [search, rating, testimonial]);
+  }, [search, rating, testimonial, activeTab]);
 
   /* ================= ACTIONS ================= */
 
@@ -57,6 +58,15 @@ export default function AdminReviewsPage() {
       fetchReviews();
     } catch (error) {
       console.error("DELETE ERROR:", error);
+    }
+  };
+
+  const updateStatus = async (productId: string, reviewId: string, status: "VISIBLE" | "HIDDEN") => {
+    try {
+      await axios.put(`/admin/reviews/${productId}/${reviewId}/status`, { status });
+      fetchReviews();
+    } catch (error) {
+      console.error("UPDATE STATUS ERROR:", error);
     }
   };
 
@@ -82,6 +92,30 @@ export default function AdminReviewsPage() {
         <p className="text-gray-500 mt-1">
           Moderate product reviews & testimonials
         </p>
+      </div>
+
+      {/* TABS */}
+      <div className="flex border-b border-gray-200">
+        <button
+          className={`py-3 px-6 text-sm font-medium border-b-2 ${
+            activeTab === "PENDING"
+              ? "border-amber-600 text-amber-600"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+          onClick={() => setActiveTab("PENDING")}
+        >
+          Pending Verifications
+        </button>
+        <button
+          className={`py-3 px-6 text-sm font-medium border-b-2 ${
+            activeTab === "VISIBLE"
+              ? "border-amber-600 text-amber-600"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+          onClick={() => setActiveTab("VISIBLE")}
+        >
+          Approved Reviews
+        </button>
       </div>
 
       {/* FILTERS */}
@@ -194,27 +228,41 @@ export default function AdminReviewsPage() {
 
                   <td className="px-6 py-4 space-x-2">
 
-                    <button
-                      onClick={() =>
-                        toggleTestimonial(review.productId, review._id)
-                      }
-                      className={`px-3 py-1 text-xs rounded cursor-pointer ${
-                        review.isTestimonial
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-200 text-gray-700"
-                      }`}
-                    >
-                      {review.isTestimonial ? "Testimonial" : "Mark"}
-                    </button>
-
-                    <button
-                      onClick={() =>
-                        deleteReview(review.productId, review._id)
-                      }
-                      className="px-3 py-1 cursor-pointer text-xs bg-warning/65 hover:bg-warning/80 text-text-on-dark rounded"
-                    >
-                      Delete
-                    </button>
+                    {activeTab === "PENDING" ? (
+                      <>
+                        <button
+                          onClick={() => updateStatus(review.productId, review._id, "VISIBLE")}
+                          className="px-3 py-1 cursor-pointer text-xs bg-green-100 hover:bg-green-200 text-green-700 rounded font-medium"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => deleteReview(review.productId, review._id)}
+                          className="px-3 py-1 cursor-pointer text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded font-medium"
+                        >
+                          Reject
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => toggleTestimonial(review.productId, review._id)}
+                          className={`px-3 py-1 text-xs rounded cursor-pointer ${
+                            review.isTestimonial
+                              ? "bg-amber-100 text-amber-700 font-medium"
+                              : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {review.isTestimonial ? "Testimonial" : "Mark Fav"}
+                        </button>
+                        <button
+                          onClick={() => deleteReview(review.productId, review._id)}
+                          className="px-3 py-1 cursor-pointer text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded font-medium"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
 
                   </td>
                 </tr>
