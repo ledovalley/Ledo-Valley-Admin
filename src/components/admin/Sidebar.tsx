@@ -72,6 +72,11 @@ const navGroups = [
         icon: ImageIcon,
       },
       {
+        label: "Hero Banners",
+        href: "/admin/home-banners",
+        icon: Sparkles,
+      },
+      {
         label: "Newsletter",
         href: "/admin/newsletter",
         icon: NewspaperIcon,

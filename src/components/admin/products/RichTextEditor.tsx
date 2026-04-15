@@ -213,6 +213,27 @@ export default function RichTextEditor({
     },
   });
 
+  /* ================= STYLE OVERRIDES ================= */
+  // Ensure lists have visible bullets and numbers within the editor
+  const editorStyles = `
+    .tiptap ul {
+      list-style-type: disc !important;
+      padding-left: 1.5rem !important;
+      margin: 1rem 0 !important;
+    }
+    .tiptap ol {
+      list-style-type: decimal !important;
+      padding-left: 1.5rem !important;
+      margin: 1rem 0 !important;
+    }
+    .tiptap li {
+      margin-bottom: 0.5rem !important;
+    }
+    .tiptap h1 { font-size: 1.875rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.75rem; }
+    .tiptap h2 { font-size: 1.5rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; }
+    .tiptap h3 { font-size: 1.25rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; }
+  `;
+
   useEffect(() => {
     if (!editor) return;
     if (value !== editor.getHTML()) {
@@ -238,6 +259,8 @@ export default function RichTextEditor({
       </div>
 
       <MenuBar editor={editor} />
+
+      <style>{editorStyles}</style>
 
       <div className="bg-white">
         <EditorContent editor={editor} />

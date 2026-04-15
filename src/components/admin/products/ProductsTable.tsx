@@ -8,6 +8,7 @@ import { getErrorMessage } from "@/lib/getErrorMessage";
 import { Eye, Trash2, Power, Package2 } from "lucide-react";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/ToastProvider";
+import TableSkeleton from "../TableSkeleton";
 
 interface Props {
   products: AdminProduct[];
@@ -70,21 +71,7 @@ export default function ProductsTable({
   };
 
   if (loading) {
-    return (
-      <div className="overflow-hidden rounded-2xl border border-bg-dark/10 bg-bg-surface">
-        <div className="border-b border-bg-dark/10 px-6 py-4">
-          <div className="h-5 w-40 animate-pulse rounded bg-bg-dark/5" />
-        </div>
-        <div className="space-y-3 p-6">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-16 animate-pulse rounded-xl bg-bg-dark/5"
-            />
-          ))}
-        </div>
-      </div>
-    );
+    return <TableSkeleton rows={6} columns={5} />;
   }
 
   if (products.length === 0) {
