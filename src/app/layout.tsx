@@ -5,6 +5,9 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Ledo Valley Admin",
   description: "Admin Panel",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
