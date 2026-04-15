@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 interface Banner {
+    teaType: string;
     _id: string;
     image: {
         url: string;

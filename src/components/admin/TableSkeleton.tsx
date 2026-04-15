@@ -12,7 +12,7 @@ export default function TableSkeleton({
   return (
     <div className="w-full animate-pulse overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">
       {/* Table Header */}
-      <div className="flex bg-black/[0.02] p-4 border-b border-black/5">
+      <div className="flex bg-black/2 p-4 border-b border-black/5">
         {[...Array(columns)].map((_, i) => (
           <div
             key={i}
@@ -28,8 +28,8 @@ export default function TableSkeleton({
             {[...Array(columns)].map((_, colIndex) => (
               <div
                 key={colIndex}
-                className={`h-4 flex-1 rounded bg-black/[0.03] mx-2 ${
-                  colIndex === 0 ? "max-w-[120px]" : ""
+                className={`h-4 flex-1 rounded bg-black/3 mx-2 ${
+                  colIndex === 0 ? "max-w-30" : ""
                 }`}
               />
             ))}

@@ -290,7 +290,7 @@ export default function AdminHomeBannersPage() {
                                 <div className="grid gap-5 md:grid-cols-2">
                                     {banners.map((banner) => (
                                         <div key={banner._id} className="group overflow-hidden rounded-3xl border border-black/10 bg-white shadow-sm">
-                                            <div className="relative aspect-16/9 w-full overflow-hidden">
+                                            <div className="relative aspect-video w-full overflow-hidden">
                                                 <Image
                                                     src={banner.image.url}
                                                     alt={banner.title || "Hero banner"}
@@ -311,7 +311,7 @@ export default function AdminHomeBannersPage() {
                                                         <Trash2 className="h-4 w-4" />
                                                     </button>
                                                 </div>
-                                                <div className="absolute bottom-0 p-4 text-white bg-gradient-to-t from-black/60 to-transparent w-full">
+                                                <div className="absolute bottom-0 p-4 text-white bg-linear-to-t from-black/60 to-transparent w-full">
                                                     <h3 className="text-sm font-semibold">{banner.title || "Untitled"}</h3>
                                                 </div>
                                             </div>
