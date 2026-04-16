@@ -273,7 +273,7 @@ export default function AdminDashboard() {
                   key={r}
                   onClick={() => setRange(r)}
                   className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${range === r
-                    ? "bg-gray-900 text-white"
+                    ? "bg-bg-dark text-white"
                     : "border border-black/10 bg-bg-surface text-gray-600 hover:bg-gray-50"
                     }`}
                 >
@@ -284,7 +284,7 @@ export default function AdminDashboard() {
           </div>
 
           <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl bg-gray-50 p-4">
+            <div className="rounded-2xl bg-neutral-50/60 p-4">
               <div className="text-xs uppercase tracking-wide text-gray-500">
                 Peak Revenue
               </div>
@@ -293,7 +293,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-gray-50 p-4">
+            <div className="rounded-2xl bg-neutral-50/60 p-4">
               <div className="text-xs uppercase tracking-wide text-gray-500">
                 Selected Range
               </div>
@@ -341,7 +341,7 @@ export default function AdminDashboard() {
         <div className="rounded-[28px] border border-black/10 bg-bg-surface p-6 shadow-sm">
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Top Products<span className="border-border-muted text-xs bg-white p-2 rounded-full ml-2 font-normal">Testing For Now</span></h2>
+              <h2 className="text-lg font-semibold text-gray-900">Top Products</h2>
               <p className="mt-1 text-sm text-gray-500">
                 Best performers by sales volume.
               </p>
@@ -374,14 +374,14 @@ export default function AdminDashboard() {
                           </div>
                         </div>
                       </div>
-                      <div className="text-right text-sm font-semibold text-gray-900">
+                      <div className="text-right text-sm font-semibold text-text-primary">
                         ₹{Number(product.revenue).toLocaleString("en-IN")}
                       </div>
                     </div>
 
                     <div className="h-2 overflow-hidden rounded-full bg-gray-100">
                       <div
-                        className="h-full rounded-full bg-gray-900"
+                        className="h-full rounded-full bg-bg-dark"
                         style={{ width: `${width}%` }}
                       />
                     </div>
@@ -400,7 +400,7 @@ export default function AdminDashboard() {
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
         <div className="rounded-[28px] border border-black/10 bg-bg-surface p-6 shadow-sm">
           <div className="mb-5">
-            <h2 className="text-lg font-semibold text-gray-900">Revenue vs Orders<span className="border-border-muted text-xs bg-white p-2 rounded-full ml-2 font-normal">Testing For Now</span></h2>
+            <h2 className="text-lg font-semibold text-gray-900">Revenue vs Orders</h2>
             <p className="mt-1 text-sm text-gray-500">
               Compare revenue and order volume over time.
             </p>
