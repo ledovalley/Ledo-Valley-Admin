@@ -16,6 +16,7 @@ import {
     User,
     Wallet,
     RotateCcw,
+    FileText,
 } from "lucide-react";
 
 interface OrderItem {
@@ -129,6 +130,7 @@ export default function OrderDetailsPage() {
     const [confirmDescription, setConfirmDescription] = useState("");
     const [confirmAction, setConfirmAction] = useState<null | (() => Promise<void>)>(null);
     const [actionLoading, setActionLoading] = useState(false);
+    const [downloadingInvoice, setDownloadingInvoice] = useState(false);
 
     const fetchOrder = useCallback(async () => {
         try {
@@ -163,6 +165,28 @@ export default function OrderDetailsPage() {
         },
         [fetchOrder, showError, success]
     );
+
+    const handleDownloadInvoice = async () => {
+        try {
+            setDownloadingInvoice(true);
+            const response = await api.get(`/admin/orders/${orderId}/invoice`, {
+                responseType: 'blob'
+            });
+
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `Invoice-${order?.orderNumber}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            success("Invoice downloaded successfully");
+        } catch (err) {
+            showError("Failed to download invoice");
+        } finally {
+            setDownloadingInvoice(false);
+        }
+    };
 
     const openConfirm = useCallback(
         (
@@ -314,6 +338,15 @@ export default function OrderDetailsPage() {
                             >
                                 <ArrowLeft className="h-4 w-4" />
                                 Back
+                            </button>
+
+                            <button
+                                onClick={handleDownloadInvoice}
+                                disabled={downloadingInvoice}
+                                className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5 disabled:opacity-50"
+                            >
+                                <FileText className={`h-4 w-4 ${downloadingInvoice ? "animate-pulse" : ""}`} />
+                                {downloadingInvoice ? "Generating..." : "Download Invoice"}
                             </button>
 
                             <button

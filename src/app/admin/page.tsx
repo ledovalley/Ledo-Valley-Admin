@@ -29,6 +29,7 @@ import { useRouter } from "next/navigation";
 
 interface Stats {
   totalRevenue: number;
+  totalProfit: number;
   totalOrders: number;
   totalProducts: number;
   totalCustomers: number;
@@ -237,16 +238,16 @@ export default function AdminDashboard() {
           icon={<ChartNoAxesCombined className="h-5 w-5" />}
         />
         <StatCard
+          title="Gross Profit"
+          value={`₹${stats.totalProfit.toLocaleString("en-IN")}`}
+          meta={`${stats.totalRevenue > 0 ? ((stats.totalProfit / stats.totalRevenue) * 100).toFixed(1) : 0}% Margin`}
+          icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
+        />
+        <StatCard
           title="Orders"
           value={stats.totalOrders}
           meta="Completed and active"
           icon={<ShoppingCart className="h-5 w-5" />}
-        />
-        <StatCard
-          title="Products"
-          value={stats.totalProducts}
-          meta="Live catalog count"
-          icon={<Package className="h-5 w-5" />}
         />
         <StatCard
           title="Customers"
