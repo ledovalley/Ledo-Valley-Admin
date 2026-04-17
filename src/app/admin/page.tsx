@@ -5,7 +5,6 @@ import api from "@/lib/api";
 import { getErrorMessage } from "@/lib/getErrorMessage";
 import {
   ChartNoAxesCombined,
-  Package,
   Users,
   ShoppingCart,
   ArrowUpRight,
