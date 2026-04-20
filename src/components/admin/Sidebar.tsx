@@ -144,7 +144,7 @@ export default function Sidebar() {
                       key={item.href}
                       href={item.href}
                       className={`group flex items-center justify-between rounded-xl px-3 py-3 text-sm transition-all ${active
-                          ? "bg-white text-(--color-bg-dark) shadow-sm"
+                          ? "bg-bg-surface text-(--color-bg-dark) shadow-sm"
                           : "text-white/80 hover:bg-white/8 hover:text-white"
                         }`}
                     >
