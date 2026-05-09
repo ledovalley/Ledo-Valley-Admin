@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Eye, EyeOff, Lock, ShieldAlert, User } from "lucide-react";
 import api from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { getErrorMessage } from "@/lib/getErrorMessage";
@@ -17,15 +18,9 @@ export default function AdminLoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   const validate = () => {
-    if (!userId.trim()) {
-      return "Admin ID is required";
-    }
-    if (!password.trim()) {
-      return "Password is required";
-    }
-    if (password.length < 6) {
-      return "Password must be at least 6 characters";
-    }
+    if (!userId.trim()) return "Admin ID is required";
+    if (!password.trim()) return "Password is required";
+    if (password.length < 6) return "Password must be at least 6 characters";
     return null;
   };
 
@@ -57,109 +52,171 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-(--color-bg-page)">
-      <div className="w-full max-w-sm bg-white p-8 rounded-2xl shadow-lg relative">
-        {/* Loading overlay */}
-        {loading && (
-          <div className="absolute inset-0 bg-white/70 rounded-2xl flex items-center justify-center z-10">
-            <div className="text-sm text-text-secondary">
-              Signing you in…
+    <div className="min-h-screen bg-bg-page flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-md">
+        <div className="relative overflow-hidden rounded-3xl border border-black/10 bg-bg-surface shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
+          {loading && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/75 backdrop-blur-sm">
+              <div className="flex items-center gap-3 rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm">
+                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-500" />
+                Signing you in...
+              </div>
+            </div>
+          )}
+
+          <div className="border-b border-black/5 bg-bg-dark px-6 pt-8 pb-6 sm:px-8">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-bg-page/60 text-(--color-brand-primary)">
+              <ShieldAlert className="h-7 w-7" />
+            </div>
+
+            <h1 className="text-center text-2xl font-medium tracking-tight text-text-on-dark">
+              Admin Login
+            </h1>
+
+            <p className="mt-2 text-center text-sm leading-6 text-text-on-dark/50">
+              Sign in to access the admin dashboard. Restricted to authorized personnel only.
+            </p>
+          </div>
+
+          <div className="px-6 py-6 sm:px-8 sm:py-8">
+            {error && (
+              <div
+                role="alert"
+                aria-live="polite"
+                className="mb-5 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+              >
+                <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="space-y-5">
+              <div>
+                <label
+                  htmlFor="userId"
+                  className="mb-2 block text-sm font-medium text-gray-700"
+                >
+                  Admin ID
+                </label>
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    id="userId"
+                    type="text"
+                    autoComplete="username"
+                    placeholder="Enter your admin ID"
+                    disabled={loading}
+                    value={userId}
+                    onChange={(e) => setUserId(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                    className="
+                      w-full rounded-2xl border border-black/10 bg-white
+                      py-3 pl-11 pr-4 text-sm text-gray-900 placeholder:text-gray-400
+                      outline-none transition
+                      focus:border-(--color-brand-primary)/40
+                      focus:ring-4 focus:ring-(--color-brand-primary)/10
+                      disabled:cursor-not-allowed disabled:opacity-60
+                    "
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label
+                    htmlFor="password"
+                    className="block text-sm font-medium text-gray-700"
+                  >
+                    Password
+                  </label>
+
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-(--color-brand-primary) hover:opacity-80"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    placeholder="Enter your password"
+                    disabled={loading}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                    className="
+                      w-full rounded-2xl border border-black/10 bg-white
+                      py-3 pl-11 pr-12 text-sm text-gray-900 placeholder:text-gray-400
+                      outline-none transition
+                      focus:border-(--color-brand-primary)/40
+                      focus:ring-4 focus:ring-(--color-brand-primary)/10
+                      disabled:cursor-not-allowed disabled:opacity-60
+                    "
+                  />
+
+                  <button
+                    type="button"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="
+                      absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2
+                      items-center justify-center rounded-full text-gray-500
+                      transition hover:bg-black/5 hover:text-gray-700
+                    "
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <label
+                  htmlFor="remember"
+                  className="flex cursor-pointer items-center gap-2 text-sm text-gray-600"
+                >
+                  <input
+                    id="remember"
+                    type="checkbox"
+                    checked={rememberMe}
+                    disabled={loading}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="h-4 w-4 rounded border-black/20 accent-(--color-brand-primary)"
+                  />
+                  <span>Remember me</span>
+                </label>
+
+                <span className="text-xs text-gray-400">Secure access</span>
+              </div>
+
+              <button
+                onClick={handleLogin}
+                disabled={loading}
+                className="
+                  mt-2 inline-flex w-full items-center justify-center rounded-2xl
+                  bg-(--color-brand-primary) px-4 py-3 text-sm font-semibold text-white
+                  shadow-sm transition hover:opacity-95
+                  focus:outline-none focus:ring-4 focus:ring-(--color-brand-primary)/20
+                  disabled:cursor-not-allowed disabled:opacity-70
+                "
+              >
+                {loading ? "Signing in..." : "Login to Dashboard"}
+              </button>
             </div>
           </div>
-        )}
+        </div>
 
-        <h1 className="text-2xl font-playfair text-center mb-2">
-          Admin Login
-        </h1>
-
-        <p className="text-center text-sm text-text-secondary mb-6">
-          Restricted access only
+        <p className="mt-4 text-center text-xs text-gray-500">
+          Protected system access. All login activity may be monitored.
         </p>
-
-        {/* Error message */}
-        {error && (
-          <div className="mb-4 text-sm text-warning">
-            {error}
-          </div>
-        )}
-
-        {/* Admin ID */}
-        <input
-          placeholder="Admin ID"
-          disabled={loading}
-          value={userId}
-          onChange={(e) => setUserId(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-          className="
-            w-full mb-4 px-4 py-3 border rounded-full
-            focus:outline-none focus:ring-2
-            focus:ring-(--color-brand-primary)/30
-            disabled:opacity-60 disabled:cursor-not-allowed
-          "
-        />
-
-        {/* Password */}
-        <div className="relative mb-4">
-          <input
-            type={showPassword ? "text" : "password"}
-            placeholder="Password"
-            disabled={loading}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-            className="
-              w-full px-4 py-3 border rounded-full pr-12
-              focus:outline-none focus:ring-2
-              focus:ring-(--color-brand-primary)/30
-              disabled:opacity-60 disabled:cursor-not-allowed
-            "
-          />
-
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="
-              absolute right-4 top-1/2 -translate-y-1/2
-              text-xs text-text-secondary
-              hover:opacity-70
-            "
-          >
-            {showPassword ? "Hide" : "Show"}
-          </button>
-        </div>
-
-        {/* Remember me */}
-        <div className="flex items-center gap-2 mb-6 text-sm">
-          <input
-            type="checkbox"
-            id="remember"
-            checked={rememberMe}
-            disabled={loading}
-            onChange={(e) => setRememberMe(e.target.checked)}
-            className="accent-(--color-brand-primary)"
-          />
-          <label
-            htmlFor="remember"
-            className="text-text-secondary"
-          >
-            Remember me
-          </label>
-        </div>
-
-        {/* Submit */}
-        <button
-          onClick={handleLogin}
-          disabled={loading}
-          className="
-            w-full py-3 rounded-full text-white font-medium
-            bg-(--color-brand-primary)
-            hover:opacity-90
-            disabled:opacity-70 disabled:cursor-not-allowed
-            transition
-          "
-        >
-          Login
-        </button>
       </div>
     </div>
   );
