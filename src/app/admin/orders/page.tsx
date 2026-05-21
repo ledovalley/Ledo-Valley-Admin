@@ -27,6 +27,7 @@ interface Order {
     status: string;
     payment: {
         status: string;
+        method?: string;
     };
     createdAt: string;
 }
@@ -378,13 +379,18 @@ export default function OrdersPage() {
                                         </td>
 
                                         <td className="px-6 py-4">
-                                            <span
-                                                className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${getPaymentColor(
-                                                    order.payment.status
-                                                )}`}
-                                            >
-                                                {order.payment.status}
-                                            </span>
+                                            <div className="flex flex-col items-start gap-1.5">
+                                                <span
+                                                    className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${getPaymentColor(
+                                                        order.payment.status
+                                                    )}`}
+                                                >
+                                                    {order.payment.status}
+                                                </span>
+                                                <span className="inline-flex rounded text-xs font-semibold text-text-secondary bg-gray-100 px-2 py-0.5">
+                                                    {order.payment.method || "PAYU"}
+                                                </span>
+                                            </div>
                                         </td>
 
                                         <td className="px-6 py-4 text-text-secondary">

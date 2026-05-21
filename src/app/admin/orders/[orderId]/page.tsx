@@ -56,6 +56,7 @@ interface Order {
     grandTotal: number;
     payment: {
         status: string;
+        method?: string;
     };
     returnInfo?: {
         status: string;
@@ -282,6 +283,22 @@ export default function OrderDetailsPage() {
                             }
                         )
                     : null,
+            markPaymentReceived:
+                order.payment.method === "COD" && order.payment.status === "PENDING"
+                    ? () =>
+                        openConfirm(
+                            "Mark payment received?",
+                            "Confirm that cash has been collected for this Cash on Delivery order.",
+                            async () => {
+                                await runAction(
+                                    api.patch(`/admin/orders/${orderId}/payment-status`, {
+                                        status: "SUCCESS"
+                                    }),
+                                    "Payment marked as received."
+                                );
+                            }
+                        )
+                    : null,
         };
     }, [order, orderId, openConfirm, runAction]);
 
@@ -449,11 +466,21 @@ export default function OrderDetailsPage() {
                             </button>
                         )}
 
+                        {actions?.markPaymentReceived && (
+                            <button
+                                onClick={actions.markPaymentReceived}
+                                className="rounded-xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-700"
+                            >
+                                Mark Payment Received (COD)
+                            </button>
+                        )}
+
                         {!actions?.readyToShip &&
                             !actions?.shipped &&
                             !actions?.delivered &&
                             !actions?.approveReturn &&
-                            !actions?.completeRefund && (
+                            !actions?.completeRefund &&
+                            !actions?.markPaymentReceived && (
                                 <div className="text-sm text-text-secondary">
                                     No actions available for the current order state.
                                 </div>
@@ -593,9 +620,12 @@ export default function OrderDetailsPage() {
                                     <div className="text-xs uppercase tracking-wide text-text-secondary">
                                         Payment Status
                                     </div>
-                                    <div className="mt-2">
+                                    <div className="mt-2 flex items-center gap-2">
                                         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${getPaymentColor(order.payment.status)}`}>
                                             {order.payment.status}
+                                        </span>
+                                        <span className="inline-flex rounded bg-gray-100 px-2 py-1 text-xs font-semibold text-text-secondary">
+                                            {order.payment.method || "PAYU"}
                                         </span>
                                     </div>
                                 </div>
