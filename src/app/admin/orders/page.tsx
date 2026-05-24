@@ -240,6 +240,7 @@ export default function OrdersPage() {
                             className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
                         >
                             <option value="">All statuses</option>
+                            <option value="PLACED">Placed (COD)</option>
                             <option value="PAYMENT_SUCCESS">Payment Success</option>
                             <option value="READY_TO_SHIP">Ready To Ship</option>
                             <option value="SHIPPED">Shipped</option>

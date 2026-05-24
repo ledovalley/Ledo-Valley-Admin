@@ -208,7 +208,7 @@ export default function OrderDetailsPage() {
 
         return {
             readyToShip:
-                order.status === "PAYMENT_SUCCESS"
+                order.status === "PAYMENT_SUCCESS" || (order.status === "PLACED" && order.payment.method === "COD")
                     ? () =>
                         openConfirm(
                             "Mark as ready to ship?",
