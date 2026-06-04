@@ -33,6 +33,7 @@ export default function CreateCouponModal({
   const [maxDiscount, setMaxDiscount] = useState<number | "">("");
   const [usageLimit, setUsageLimit] = useState<number | "">("");
   const [expiresAt, setExpiresAt] = useState("");
+  const [notApplicableOnCOD, setNotApplicableOnCOD] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
@@ -103,6 +104,7 @@ export default function CreateCouponModal({
     setMaxDiscount("");
     setUsageLimit("");
     setExpiresAt("");
+    setNotApplicableOnCOD(false);
     setType("PERCENT");
     setError(null);
   };
@@ -125,6 +127,7 @@ export default function CreateCouponModal({
             : null,
         usageLimit: usageLimit === "" ? null : Number(usageLimit),
         expiresAt,
+        notApplicableOnCOD,
       });
 
       resetForm();
@@ -338,6 +341,25 @@ export default function CreateCouponModal({
               </p>
             </div>
 
+            <div className="space-y-2 pt-2">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notApplicableOnCOD}
+                  onChange={(e) => setNotApplicableOnCOD(e.target.checked)}
+                  className="h-5 w-5 rounded border-black/10 text-brand-primary focus:ring-brand-primary"
+                />
+                <div>
+                  <div className="text-sm font-medium text-text-primary">
+                    Disable for Cash on Delivery (COD)
+                  </div>
+                  <div className="text-xs text-text-secondary">
+                    If checked, this coupon cannot be applied when COD is selected.
+                  </div>
+                </div>
+              </label>
+            </div>
+
             {validationMessage ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
                 {validationMessage}
@@ -432,6 +454,7 @@ export default function CreateCouponModal({
                   discount
                   {minOrderAmount !== "" ? ` on orders above ₹${minOrderAmount}` : ""}
                   {expiresAt ? ` until ${expiresLabel}` : ""}.
+                  {notApplicableOnCOD ? " (Not valid for COD)" : ""}
                 </p>
               </div>
             </div>

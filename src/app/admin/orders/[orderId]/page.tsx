@@ -52,6 +52,7 @@ interface Order {
     itemsTotal: number;
     gstAmount: number;
     shippingAmount: number;
+    codCharge?: number;
     discountAmount: number;
     grandTotal: number;
     payment: {
@@ -594,6 +595,15 @@ export default function OrderDetailsPage() {
                                         ₹{order.shippingAmount.toLocaleString("en-IN")}
                                     </span>
                                 </div>
+
+                                {order.codCharge ? (
+                                    <div className="flex justify-between">
+                                        <span className="text-text-secondary">COD Charge</span>
+                                        <span className="font-medium text-text-primary">
+                                            ₹{order.codCharge.toLocaleString("en-IN")}
+                                        </span>
+                                    </div>
+                                ) : null}
 
                                 {order.discountAmount > 0 && (
                                     <div className="flex justify-between text-green-600">
