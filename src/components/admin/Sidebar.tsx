@@ -15,6 +15,7 @@ import {
   Image as ImageIcon,
   ChevronRight,
   Sparkles,
+  Settings,
 } from "lucide-react";
 
 const navGroups = [
@@ -90,6 +91,16 @@ const navGroups = [
         label: "Inquiries",
         href: "/admin/inquiries",
         icon: BadgeQuestionMark,
+      },
+    ],
+  },
+  {
+    title: "System",
+    items: [
+      {
+        label: "Settings",
+        href: "/admin/settings",
+        icon: Settings,
       },
     ],
   },

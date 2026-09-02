@@ -13,7 +13,10 @@ import {
     Truck,
     ChevronLeft,
     ChevronRight,
+    Download,
+    Loader2,
 } from "lucide-react";
+import { useToast } from "@/components/ui/ToastProvider";
 
 interface Order {
     _id: string;
@@ -116,8 +119,15 @@ export default function OrdersPage() {
     const [search, setSearch] = useState("");
     const [status, setStatus] = useState("");
     const [paymentStatus, setPaymentStatus] = useState("");
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
     const [page, setPage] = useState(1);
     const [pages, setPages] = useState(1);
+
+    const { success, error: toastError } = useToast();
+    const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+    const [cancelModalOrder, setCancelModalOrder] = useState<Order | null>(null);
+    const [cancelRemarks, setCancelRemarks] = useState("");
 
     const fetchOrders = useCallback(async () => {
         try {
@@ -129,6 +139,8 @@ export default function OrdersPage() {
                     search,
                     status,
                     paymentStatus,
+                    startDate,
+                    endDate,
                     page,
                     limit: 20,
                 },
@@ -141,7 +153,7 @@ export default function OrdersPage() {
         } finally {
             setLoading(false);
         }
-    }, [search, status, paymentStatus, page]);
+    }, [search, status, paymentStatus, startDate, endDate, page]);
 
     useEffect(() => {
         fetchOrders();
@@ -157,6 +169,96 @@ export default function OrdersPage() {
 
         return { delivered, inTransit, paid, revenue };
     }, [orders]);
+
+    const handleUpdateStatus = async (orderId: string, status: string, remarks?: string) => {
+        if (status === "CANCELLED" && !remarks) {
+            const order = orders.find(o => o._id === orderId);
+            if (order) {
+                setCancelModalOrder(order);
+                setCancelRemarks("");
+            }
+            return;
+        }
+
+        try {
+            setUpdatingOrderId(orderId);
+            await api.patch(`/admin/orders/${orderId}/status`, { status, remarks });
+            success("Order status updated");
+            
+            if (cancelModalOrder) {
+                setCancelModalOrder(null);
+                setCancelRemarks("");
+            }
+            fetchOrders();
+        } catch (err) {
+            toastError(getErrorMessage(err));
+        } finally {
+            setUpdatingOrderId(null);
+        }
+    };
+
+    const handleUpdatePaymentStatus = async (orderId: string, status: string) => {
+        try {
+            setUpdatingOrderId(orderId);
+            await api.patch(`/admin/orders/${orderId}/payment-status`, { status });
+            success("Payment status updated");
+            fetchOrders();
+        } catch (err) {
+            toastError(getErrorMessage(err));
+        } finally {
+            setUpdatingOrderId(null);
+        }
+    };
+
+    const handleDownloadInvoice = async (e: React.MouseEvent, orderId: string, orderNumber: string) => {
+        e.stopPropagation();
+        try {
+            setUpdatingOrderId(orderId);
+            const res = await api.get(`/admin/orders/${orderId}/invoice`, {
+                responseType: "blob",
+            });
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement("a");
+            link.href = url;
+            link.setAttribute("download", `Invoice-${orderNumber}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode?.removeChild(link);
+            success("Invoice downloaded");
+        } catch (err) {
+            toastError("Failed to download invoice");
+        } finally {
+            setUpdatingOrderId(null);
+        }
+    };
+
+    const handleBulkDownload = async () => {
+        try {
+            setLoading(true);
+            const res = await api.get(`/admin/orders/bulk-invoice`, {
+                params: {
+                    search,
+                    status,
+                    paymentStatus,
+                    startDate,
+                    endDate
+                },
+                responseType: "blob",
+            });
+            const url = window.URL.createObjectURL(new Blob([res.data]));
+            const link = document.createElement("a");
+            link.href = url;
+            link.setAttribute("download", `Bulk-Invoices-${new Date().toISOString().split('T')[0]}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode?.removeChild(link);
+            success("Bulk invoices downloaded");
+        } catch (err) {
+            toastError("Failed to bulk download invoices (Ensure there are matching orders)");
+        } finally {
+            setLoading(false);
+        }
+    };
 
     return (
         <div className="space-y-8">
@@ -174,13 +276,27 @@ export default function OrdersPage() {
                         </p>
                     </div>
 
-                    <button
-                        onClick={fetchOrders}
-                        className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5"
-                    >
-                        <RefreshCw className="h-4 w-4" />
-                        Refresh
-                    </button>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={handleBulkDownload}
+                            disabled={loading || orders.length === 0}
+                            className="inline-flex items-center gap-2 rounded-xl bg-brand-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-primary/90 disabled:opacity-50"
+                        >
+                            {loading && !updatingOrderId ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Download className="h-4 w-4" />
+                            )}
+                            Bulk Download
+                        </button>
+                        <button
+                            onClick={fetchOrders}
+                            className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5"
+                        >
+                            <RefreshCw className="h-4 w-4" />
+                            Refresh
+                        </button>
+                    </div>
                 </div>
             </section>
 
@@ -208,7 +324,7 @@ export default function OrdersPage() {
             </section>
 
             <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_220px_auto]">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_220px_200px_200px]">
                     <div>
                         <label className="mb-2 block text-sm font-medium text-text-primary">
                             Search
@@ -272,6 +388,36 @@ export default function OrdersPage() {
                         </select>
                     </div>
 
+                    <div>
+                        <label className="mb-2 block text-sm font-medium text-text-primary">
+                            From Date
+                        </label>
+                        <input
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => {
+                                setPage(1);
+                                setStartDate(e.target.value);
+                            }}
+                            className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="mb-2 block text-sm font-medium text-text-primary">
+                            To Date
+                        </label>
+                        <input
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => {
+                                setPage(1);
+                                setEndDate(e.target.value);
+                            }}
+                            className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+                    </div>
+
                     <div className="flex items-end">
                         <button
                             type="button"
@@ -279,6 +425,8 @@ export default function OrdersPage() {
                                 setSearch("");
                                 setStatus("");
                                 setPaymentStatus("");
+                                setStartDate("");
+                                setEndDate("");
                                 setPage(1);
                             }}
                             className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm font-medium text-text-primary transition hover:bg-black/5"
@@ -334,6 +482,7 @@ export default function OrdersPage() {
                                     <th className="px-6 py-4">Order Status</th>
                                     <th className="px-6 py-4">Payment</th>
                                     <th className="px-6 py-4">Date</th>
+                                    <th className="px-6 py-4 text-right">Actions</th>
                                 </tr>
                             </thead>
 
@@ -370,24 +519,48 @@ export default function OrdersPage() {
                                         </td>
 
                                         <td className="px-6 py-4">
-                                            <span
-                                                className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${getStatusColor(
-                                                    order.status
-                                                )}`}
-                                            >
-                                                {order.status.replaceAll("_", " ")}
-                                            </span>
+                                            <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+                                                <select
+                                                    value={order.status}
+                                                    onChange={(e) => handleUpdateStatus(order._id, e.target.value)}
+                                                    disabled={updatingOrderId === order._id || ["DELIVERED", "CANCELLED", "REFUNDED"].includes(order.status)}
+                                                    className={`appearance-none rounded-full px-3 py-1 text-xs font-medium border-0 cursor-pointer pr-8 focus:ring-2 focus:ring-black/10 disabled:opacity-70 ${getStatusColor(order.status)}`}
+                                                >
+                                                    <option value="PLACED">PLACED</option>
+                                                    <option value="PAYMENT_PENDING">PAYMENT PENDING</option>
+                                                    <option value="PAYMENT_SUCCESS">PAYMENT SUCCESS</option>
+                                                    <option value="READY_TO_SHIP">READY TO SHIP</option>
+                                                    <option value="SHIPPED">SHIPPED</option>
+                                                    <option value="DELIVERED">DELIVERED</option>
+                                                    <option value="CANCELLED">CANCELLED</option>
+                                                    <option value="RETURN_REQUESTED">RETURN REQUESTED</option>
+                                                    <option value="RETURN_APPROVED">RETURN APPROVED</option>
+                                                    <option value="REFUNDED">REFUNDED</option>
+                                                </select>
+                                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-current opacity-50">
+                                                    <svg className="h-3 w-3 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" /></svg>
+                                                </div>
+                                            </div>
                                         </td>
 
                                         <td className="px-6 py-4">
-                                            <div className="flex flex-col items-start gap-1.5">
-                                                <span
-                                                    className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${getPaymentColor(
-                                                        order.payment.status
-                                                    )}`}
-                                                >
-                                                    {order.payment.status}
-                                                </span>
+                                            <div className="flex flex-col items-start gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                                <div className="relative inline-block">
+                                                    <select
+                                                        value={order.payment.status}
+                                                        onChange={(e) => handleUpdatePaymentStatus(order._id, e.target.value)}
+                                                        disabled={updatingOrderId === order._id || order.payment.method !== "COD" || order.payment.status === "SUCCESS"}
+                                                        className={`appearance-none rounded-full px-3 py-1 text-xs font-medium border-0 cursor-pointer pr-8 focus:ring-2 focus:ring-black/10 disabled:opacity-70 ${getPaymentColor(order.payment.status)}`}
+                                                    >
+                                                        <option value="PENDING">PENDING</option>
+                                                        <option value="SUCCESS">SUCCESS</option>
+                                                        <option value="FAILED">FAILED</option>
+                                                        <option value="REFUNDED">REFUNDED</option>
+                                                    </select>
+                                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-current opacity-50">
+                                                        <svg className="h-3 w-3 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" /></svg>
+                                                    </div>
+                                                </div>
                                                 <span className="inline-flex rounded text-xs font-semibold text-text-secondary bg-gray-100 px-2 py-0.5">
                                                     {order.payment.method || "PAYU"}
                                                 </span>
@@ -401,10 +574,70 @@ export default function OrdersPage() {
                                                 year: "numeric",
                                             })}
                                         </td>
+                                        
+                                        <td className="px-6 py-4 text-right">
+                                            <button
+                                                onClick={(e) => handleDownloadInvoice(e, order._id, order.orderNumber)}
+                                                disabled={updatingOrderId === order._id}
+                                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 bg-white text-text-secondary transition hover:bg-black/5 hover:text-text-primary disabled:opacity-50"
+                                                title="Download Invoice"
+                                            >
+                                                {updatingOrderId === order._id ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                ) : (
+                                                    <Download className="h-4 w-4" />
+                                                )}
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Cancel Order Modal */}
+            {cancelModalOrder && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+                    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                        <h3 className="text-lg font-semibold text-text-primary">Cancel Order #{cancelModalOrder.orderNumber}</h3>
+                        <p className="mt-1 text-sm text-text-secondary">
+                            Please provide a reason for cancelling this order.
+                            {cancelModalOrder.payment.status === "SUCCESS" && " A refund will be automatically initiated for this prepaid order."}
+                        </p>
+
+                        <div className="mt-4">
+                            <label className="mb-2 block text-sm font-medium text-text-primary">Cancellation Remarks</label>
+                            <textarea
+                                value={cancelRemarks}
+                                onChange={(e) => setCancelRemarks(e.target.value)}
+                                placeholder="E.g., Out of stock, customer requested, etc."
+                                className="w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                                rows={3}
+                            />
+                        </div>
+
+                        <div className="mt-6 flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setCancelModalOrder(null);
+                                    setCancelRemarks("");
+                                }}
+                                disabled={updatingOrderId === cancelModalOrder._id}
+                                className="rounded-xl px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-black/5 disabled:opacity-50"
+                            >
+                                Close
+                            </button>
+                            <button
+                                onClick={() => handleUpdateStatus(cancelModalOrder._id, "CANCELLED", cancelRemarks)}
+                                disabled={!cancelRemarks.trim() || updatingOrderId === cancelModalOrder._id}
+                                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {updatingOrderId === cancelModalOrder._id && <Loader2 className="h-4 w-4 animate-spin" />}
+                                Confirm Cancellation
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
