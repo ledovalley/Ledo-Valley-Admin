@@ -87,7 +87,7 @@ export default function SettingsPage() {
           <h2 className="mb-4 text-lg font-semibold text-text-primary">Pricing & Charges</h2>
           <div className="grid gap-6 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-sm font-medium text-text-primary">COD Charge (₹)</label>
+              <label className="mb-2 block text-sm font-medium text-text-primary">COD CHARGES(Inclusive of GST 5%)</label>
               <input
                 type="number"
                 name="codCharge"
@@ -97,7 +97,7 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <label className="mb-2 block text-sm font-medium text-text-primary">Flat Shipping Charge (₹)</label>
+              <label className="mb-2 block text-sm font-medium text-text-primary">Flat Shipping charges(Inclusive of GST 5%)</label>
               <input
                 type="number"
                 name="flatShippingCharge"
