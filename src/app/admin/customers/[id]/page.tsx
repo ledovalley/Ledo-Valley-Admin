@@ -12,6 +12,7 @@ interface Customer {
     email: string;
     phone?: string;
     createdAt: string;
+    emailVerified?: boolean;
 }
 
 interface CustomerStats {
@@ -80,9 +81,23 @@ export default function CustomerProfilePage() {
         <div className="min-h-screen p-8 space-y-8">
 
             {/* HEADER */}
-            <div>
-                <h1 className="text-3xl font-semibold">{customer.name}</h1>
-                <p className="text-gray-500">{customer.email}</p>
+            <div className="bg-bg-surface p-6 rounded-2xl border border-border-muted/30">
+                <div className="flex justify-between items-start">
+                    <div>
+                        <h1 className="text-3xl font-semibold">{customer.name || "No Name Provided"}</h1>
+                        <p className="text-gray-500 mt-1">{customer.email}</p>
+                    </div>
+                    <div className="text-right text-sm text-gray-500 space-y-1">
+                        <p>Joined: {new Date(customer.createdAt).toLocaleDateString()}</p>
+                        <p>Phone: {customer.phone || "N/A"}</p>
+                        <p>
+                            Email Status:{" "}
+                            <span className={customer.emailVerified ? "text-green-600 font-medium" : "text-yellow-600 font-medium"}>
+                                {customer.emailVerified ? "Verified" : "Unverified"}
+                            </span>
+                        </p>
+                    </div>
+                </div>
             </div>
 
             {/* STATS */}
