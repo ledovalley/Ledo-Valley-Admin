@@ -10,7 +10,6 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState({
-    codCharge: 29,
     freeShippingThreshold: 1000,
     flatShippingCharge: 90,
     gstPercent: 5,
@@ -86,16 +85,6 @@ export default function SettingsPage() {
         <div className="rounded-2xl border border-bg-dark/10 bg-bg-surface p-6">
           <h2 className="mb-4 text-lg font-semibold text-text-primary">Pricing & Charges</h2>
           <div className="grid gap-6 md:grid-cols-2">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-text-primary">COD CHARGES(Inclusive of GST 5%)</label>
-              <input
-                type="number"
-                name="codCharge"
-                value={settings.codCharge}
-                onChange={handleChange}
-                className="w-full rounded-xl border border-bg-dark/10 bg-white px-4 py-2.5 text-sm text-text-primary outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
-              />
-            </div>
             <div>
               <label className="mb-2 block text-sm font-medium text-text-primary">Flat Shipping charges(Inclusive of GST 5%)</label>
               <input

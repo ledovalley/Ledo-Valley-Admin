@@ -18,7 +18,6 @@ export interface AdminCoupon {
   usedCount: number;
   expiresAt: string;
   status: "ACTIVE" | "INACTIVE";
-  notApplicableOnCOD?: boolean;
 }
 
 export default function CouponsPage() {
