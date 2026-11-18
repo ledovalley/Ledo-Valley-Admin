@@ -81,7 +81,10 @@ interface Order {
     payment: {
         status: string;
         method?: string;
+        failureReason?: string;
+        lastCheckedAt?: string;
     };
+    attentionNote?: string;
     returnInfo?: {
         status: string;
         reason?: string;
@@ -135,7 +138,7 @@ function Card({
 
 export default function OrderDetailsPage() {
     const { orderId } = useParams<{ orderId: string }>();
-    const { success, error: showError } = useToast();
+    const { success, error: showError, info } = useToast();
 
     const [order, setOrder] = useState<Order | null>(null);
     const [loading, setLoading] = useState(true);
@@ -148,6 +151,7 @@ export default function OrderDetailsPage() {
 
     const [cancelOpen, setCancelOpen] = useState(false);
     const [cancelRemarks, setCancelRemarks] = useState("");
+    const [checkingPayment, setCheckingPayment] = useState(false);
     const [rejectOpen, setRejectOpen] = useState(false);
     const [rejectRemarks, setRejectRemarks] = useState("");
 
@@ -199,6 +203,23 @@ export default function OrderDetailsPage() {
             showError(getErrorMessage(err));
         } finally {
             setActionLoading(false);
+        }
+    };
+
+    const checkPayment = async () => {
+        if (!order) return;
+        try {
+            setCheckingPayment(true);
+            const res = await api.post(`/admin/orders/${order._id}/verify-payment`);
+            const { result, message } = res.data || {};
+            if (result === "paid") success(message, "Payment found");
+            else if (result === "mismatch") showError(message);
+            else info(message);
+            await fetchOrder();
+        } catch (err) {
+            showError(getErrorMessage(err));
+        } finally {
+            setCheckingPayment(false);
         }
     };
 
@@ -290,6 +311,8 @@ export default function OrderDetailsPage() {
     const shipPhone = addr.phone || order.customerSnapshot.phone;
     const isCodPending = order.payment.method === "COD" && order.payment.status === "PENDING";
     const refundPending = cancelled && order.payment.status === "REFUND_PENDING";
+    const canCheckPayment =
+        order.payment.method !== "COD" && ["PENDING", "FAILED"].includes(order.payment.status);
 
     const secondaryActions: { label: string; className: string; onClick: () => void }[] = [];
     if (refundPending) {
@@ -413,6 +436,36 @@ export default function OrderDetailsPage() {
                         </div>
                     </div>
                 </section>
+
+                {order.attentionNote && (
+                    <section role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm">
+                        <span className="font-semibold">Needs attention: </span>
+                        {order.attentionNote}
+                    </section>
+                )}
+
+                {canCheckPayment && (
+                    <section className="flex flex-col gap-3 rounded-2xl border border-yellow-200 bg-yellow-50 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                        <div className="text-sm text-yellow-900">
+                            <div className="font-semibold">
+                                Payment shows as {paymentLabel(order.payment.status).toLowerCase()}
+                                {order.payment.failureReason ? ` (${order.payment.failureReason})` : ""}.
+                            </div>
+                            <div className="mt-0.5">
+                                If the customer says they paid, check with PayU. The site also checks automatically every 15 minutes
+                                {order.payment.lastCheckedAt ? ` (last checked ${formatDate(order.payment.lastCheckedAt, true)})` : ""}.
+                            </div>
+                        </div>
+                        <button
+                            onClick={checkPayment}
+                            disabled={checkingPayment}
+                            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-yellow-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-yellow-700 disabled:opacity-60"
+                        >
+                            {checkingPayment && <Loader2 className="h-4 w-4 animate-spin" />}
+                            Check payment with PayU
+                        </button>
+                    </section>
+                )}
 
                 {/* Progress + next step */}
                 <section className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">

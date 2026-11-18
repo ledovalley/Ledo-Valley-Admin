@@ -47,6 +47,7 @@ interface Order {
         method?: string;
     };
     createdAt: string;
+    attentionNote?: string;
 }
 
 interface ConfirmState {
@@ -637,6 +638,11 @@ export default function OrdersPage() {
                                                     <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${statusBadgeClass(order.status)}`}>
                                                         {statusLabel(order.status)}
                                                     </span>
+                                                    {order.attentionNote && (
+                                                        <span title={order.attentionNote} className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-300">
+                                                            ⚠ Needs attention
+                                                        </span>
+                                                    )}
                                                     {order.payment.status !== "SUCCESS" && (
                                                         <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${paymentBadgeClass(order.payment.status)}`}>
                                                             {paymentLabel(order.payment.status)}
