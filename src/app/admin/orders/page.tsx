@@ -1,22 +1,36 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import { getErrorMessage } from "@/lib/getErrorMessage";
+import { useToast } from "@/components/ui/ToastProvider";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import {
-    Search,
-    RefreshCw,
-    PackageSearch,
-    ShoppingBag,
-    CircleDollarSign,
-    Truck,
+    ORDER_TABS,
+    formatDate,
+    formatINR,
+    nextStep,
+    paymentBadgeClass,
+    paymentLabel,
+    statusBadgeClass,
+    statusLabel,
+    STATUS_LABEL,
+    type NextStep,
+} from "@/lib/orderFlow";
+import { openPrintWindow, writePackingSlips, type SlipOrder } from "@/lib/packingSlip";
+import { downloadBulkInvoices, downloadInvoice } from "@/lib/invoice";
+import {
     ChevronLeft,
     ChevronRight,
     Download,
     Loader2,
+    PackageSearch,
+    Printer,
+    RefreshCw,
+    Search,
+    X,
 } from "lucide-react";
-import { useToast } from "@/components/ui/ToastProvider";
 
 interface Order {
     _id: string;
@@ -35,637 +49,690 @@ interface Order {
     createdAt: string;
 }
 
-const getStatusColor = (status: string) => {
-    switch (status) {
-        case "DELIVERED":
-            return "bg-green-100 text-green-700";
-        case "SHIPPED":
-            return "bg-blue-100 text-blue-700";
-        case "READY_TO_SHIP":
-            return "bg-indigo-100 text-indigo-700";
-        case "CANCELLED":
-            return "bg-red-100 text-red-700";
-        case "RETURN_REQUESTED":
-            return "bg-orange-100 text-orange-700";
-        case "RETURN_APPROVED":
-            return "bg-amber-100 text-amber-700";
-        case "REFUNDED":
-            return "bg-purple-100 text-purple-700";
-        default:
-            return "bg-gray-100 text-gray-600";
-    }
-};
-
-const getPaymentColor = (status: string) => {
-    switch (status) {
-        case "SUCCESS":
-            return "bg-green-100 text-green-700";
-        case "FAILED":
-            return "bg-red-100 text-red-700";
-        case "REFUNDED":
-            return "bg-purple-100 text-purple-700";
-        default:
-            return "bg-yellow-100 text-yellow-700";
-    }
-};
-
-function StatCard({
-    title,
-    value,
-    icon,
-}: {
+interface ConfirmState {
     title: string;
-    value: React.ReactNode;
-    icon: React.ReactNode;
-}) {
-    return (
-        <div className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-text-secondary">
-                {icon}
-                <span>{title}</span>
-            </div>
-            <div className="mt-3 text-2xl font-semibold text-text-primary">
-                {value}
-            </div>
-        </div>
-    );
+    description: string;
+    confirmText: string;
+    tone: "danger" | "default";
+    run: () => Promise<void>;
 }
 
-function OrdersTableSkeleton() {
-    return (
-        <div className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
-            <div className="border-b border-black/10 px-6 py-4">
-                <div className="h-5 w-48 animate-pulse rounded bg-black/5" />
-            </div>
-            <div className="space-y-3 p-6">
-                {Array.from({ length: 7 }).map((_, i) => (
-                    <div
-                        key={i}
-                        className="h-16 animate-pulse rounded-xl bg-black/5"
-                    />
-                ))}
-            </div>
-        </div>
-    );
-}
+const PAGE_SIZE = 20;
 
 export default function OrdersPage() {
     const router = useRouter();
+    const { success, error: toastError, info } = useToast();
+
+    const [tabKey, setTabKey] = useState(ORDER_TABS[0].key);
+    const tab = ORDER_TABS.find((t) => t.key === tabKey) ?? ORDER_TABS[0];
+    const [counts, setCounts] = useState<Record<string, number | null>>({});
 
     const [orders, setOrders] = useState<Order[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    const [searchInput, setSearchInput] = useState("");
     const [search, setSearch] = useState("");
-    const [status, setStatus] = useState("");
+    const [statusAll, setStatusAll] = useState("");
     const [paymentStatus, setPaymentStatus] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     const [page, setPage] = useState(1);
     const [pages, setPages] = useState(1);
 
-    const { success, error: toastError } = useToast();
-    const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
-    const [cancelModalOrder, setCancelModalOrder] = useState<Order | null>(null);
-    const [cancelRemarks, setCancelRemarks] = useState("");
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [rowBusy, setRowBusy] = useState<string | null>(null);
+    const [bulk, setBulk] = useState<{ label: string; done: number; total: number } | null>(null);
+    const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+    const [confirmLoading, setConfirmLoading] = useState(false);
+
+    const requestId = useRef(0);
+
+    const statusParam = tab.status || statusAll;
+    const filterParams = useMemo(
+        () => ({
+            search,
+            status: statusParam,
+            paymentStatus: tab.key === "all" ? paymentStatus : "",
+            startDate,
+            endDate,
+        }),
+        [search, statusParam, tab.key, paymentStatus, startDate, endDate]
+    );
+
+    /* ---------- data ---------- */
 
     const fetchOrders = useCallback(async () => {
+        const id = ++requestId.current;
         try {
             setLoading(true);
             setError(null);
-
             const res = await api.get("/admin/orders", {
-                params: {
-                    search,
-                    status,
-                    paymentStatus,
-                    startDate,
-                    endDate,
-                    page,
-                    limit: 20,
-                },
+                params: { ...filterParams, page, limit: PAGE_SIZE },
             });
-
-            setOrders(res.data.orders);
-            setPages(res.data.pages);
+            if (id !== requestId.current) return; // a newer search has started
+            setOrders(res.data.orders ?? []);
+            setPages(Math.max(1, Number(res.data.pages) || 1));
         } catch (err) {
-            setError(getErrorMessage(err));
+            if (id === requestId.current) setError(getErrorMessage(err));
         } finally {
-            setLoading(false);
+            if (id === requestId.current) setLoading(false);
         }
-    }, [search, status, paymentStatus, startDate, endDate, page]);
+    }, [filterParams, page]);
+
+    const fetchCounts = useCallback(async () => {
+        const counted = ORDER_TABS.filter((t) => t.counted);
+        const results = await Promise.all(
+            counted.map(async (t) => {
+                try {
+                    const res = await api.get("/admin/orders", {
+                        params: { status: t.status, page: 1, limit: 1 },
+                    });
+                    const d = res.data;
+                    // With limit=1, "pages" equals the number of matching orders.
+                    const n =
+                        typeof d.total === "number"
+                            ? d.total
+                            : (d.orders?.length ?? 0) === 0
+                                ? 0
+                                : Number(d.pages) || 0;
+                    return [t.key, n] as const;
+                } catch {
+                    return [t.key, null] as const;
+                }
+            })
+        );
+        setCounts(Object.fromEntries(results));
+    }, []);
+
+    const refreshAll = useCallback(() => {
+        fetchOrders();
+        fetchCounts();
+    }, [fetchOrders, fetchCounts]);
 
     useEffect(() => {
         fetchOrders();
     }, [fetchOrders]);
 
-    const stats = useMemo(() => {
-        const delivered = orders.filter((o) => o.status === "DELIVERED").length;
-        const inTransit = orders.filter(
-            (o) => o.status === "SHIPPED" || o.status === "READY_TO_SHIP"
-        ).length;
-        const paid = orders.filter((o) => o.payment.status === "SUCCESS").length;
-        const revenue = orders.reduce((sum, o) => sum + o.grandTotal, 0);
+    useEffect(() => {
+        fetchCounts();
+    }, [fetchCounts]);
 
-        return { delivered, inTransit, paid, revenue };
-    }, [orders]);
+    // Wait until typing pauses before searching.
+    useEffect(() => {
+        const t = setTimeout(() => {
+            setSearch(searchInput.trim());
+            setPage(1);
+        }, 400);
+        return () => clearTimeout(t);
+    }, [searchInput]);
 
-    const handleUpdateStatus = async (orderId: string, status: string, remarks?: string) => {
-        if (status === "CANCELLED" && !remarks) {
-            const order = orders.find(o => o._id === orderId);
-            if (order) {
-                setCancelModalOrder(order);
-                setCancelRemarks("");
+    // Clear the selection whenever the visible list changes.
+    useEffect(() => {
+        setSelected(new Set());
+    }, [filterParams, page]);
+
+    const switchTab = (key: string) => {
+        setTabKey(key);
+        setStatusAll("");
+        setPaymentStatus("");
+        setPage(1);
+    };
+
+    const clearFilters = () => {
+        setSearchInput("");
+        setSearch("");
+        setStatusAll("");
+        setPaymentStatus("");
+        setStartDate("");
+        setEndDate("");
+        setPage(1);
+    };
+
+    const hasFilters = !!(searchInput || statusAll || paymentStatus || startDate || endDate);
+
+    /* ---------- selection ---------- */
+
+    const selectedOrders = orders.filter((o) => selected.has(o._id));
+    const allOnPageSelected = orders.length > 0 && orders.every((o) => selected.has(o._id));
+
+    const toggleOne = (id: string) =>
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+
+    const toggleAll = () =>
+        setSelected(allOnPageSelected ? new Set() : new Set(orders.map((o) => o._id)));
+
+    // A bulk step is offered only when every selected order has the same next step.
+    const bulkStep: NextStep | null = useMemo(() => {
+        if (selectedOrders.length === 0) return null;
+        const first = nextStep(selectedOrders[0]);
+        if (!first) return null;
+        return selectedOrders.every((o) => nextStep(o)?.to === first.to) ? first : null;
+    }, [selectedOrders]);
+
+    /* ---------- actions ---------- */
+
+    const advanceOne = (order: Order, step: NextStep) => {
+        setConfirm({
+            title: `${step.label}: #${order.orderNumber}?`,
+            description: step.hint,
+            confirmText: step.label,
+            tone: step.to === "DELIVERED" ? "danger" : "default",
+            run: async () => {
+                try {
+                    setRowBusy(order._id);
+                    await api.patch(`/admin/orders/${order._id}/status`, { status: step.to });
+                    success(`Order #${order.orderNumber} marked ${step.done}.`);
+                    refreshAll();
+                } catch (err) {
+                    toastError(getErrorMessage(err));
+                } finally {
+                    setRowBusy(null);
+                }
+            },
+        });
+    };
+
+    const advanceSelected = (step: NextStep) => {
+        const targets = [...selectedOrders];
+        setConfirm({
+            title: `${step.label}: ${targets.length} order${targets.length > 1 ? "s" : ""}?`,
+            description: `${step.hint} Orders: ${targets.map((o) => `#${o.orderNumber}`).join(", ")}`,
+            confirmText: `${step.label} (${targets.length})`,
+            tone: step.to === "DELIVERED" ? "danger" : "default",
+            run: async () => {
+                const failed: string[] = [];
+                setBulk({ label: step.label, done: 0, total: targets.length });
+                for (let i = 0; i < targets.length; i++) {
+                    try {
+                        await api.patch(`/admin/orders/${targets[i]._id}/status`, { status: step.to });
+                    } catch (err) {
+                        failed.push(`#${targets[i].orderNumber} (${getErrorMessage(err)})`);
+                    }
+                    setBulk({ label: step.label, done: i + 1, total: targets.length });
+                }
+                setBulk(null);
+                const ok = targets.length - failed.length;
+                if (ok > 0) success(`${ok} order${ok > 1 ? "s" : ""} marked ${step.done}.`);
+                if (failed.length) toastError(`Couldn't update: ${failed.join(", ")}`);
+                setSelected(new Set());
+                refreshAll();
+            },
+        });
+    };
+
+    const runConfirm = async () => {
+        if (!confirm) return;
+        setConfirmLoading(true);
+        // Close first so bulk progress is visible.
+        const task = confirm.run;
+        setConfirm(null);
+        try {
+            await task();
+        } finally {
+            setConfirmLoading(false);
+        }
+    };
+
+    const invoiceOne = async (order: Order) => {
+        try {
+            setRowBusy(order._id);
+            await downloadInvoice(order._id, order.orderNumber);
+        } catch {
+            toastError(`Couldn't download the invoice for #${order.orderNumber}.`);
+        } finally {
+            setRowBusy(null);
+        }
+    };
+
+    const invoicesSelected = async () => {
+        const targets = [...selectedOrders];
+        if (targets.length > 1) info("Your browser may ask to allow multiple downloads. Choose Allow.");
+        setBulk({ label: "Downloading invoices", done: 0, total: targets.length });
+        const failed: string[] = [];
+        for (let i = 0; i < targets.length; i++) {
+            try {
+                await downloadInvoice(targets[i]._id, targets[i].orderNumber);
+            } catch {
+                failed.push(`#${targets[i].orderNumber}`);
             }
+            setBulk({ label: "Downloading invoices", done: i + 1, total: targets.length });
+            await new Promise((r) => setTimeout(r, 350));
+        }
+        setBulk(null);
+        if (failed.length) toastError(`Couldn't download: ${failed.join(", ")}`);
+    };
+
+    const invoicesForView = async () => {
+        try {
+            setBulk({ label: "Preparing invoices", done: 0, total: 1 });
+            await downloadBulkInvoices(filterParams);
+        } catch {
+            toastError("Couldn't download invoices. Check that this view has orders.");
+        } finally {
+            setBulk(null);
+        }
+    };
+
+    const printSlips = async (targets: Order[]) => {
+        const w = openPrintWindow(); // must open inside the click
+        if (!w) {
+            toastError("Your browser blocked the print window. Allow pop-ups for this site.");
             return;
         }
-
         try {
-            setUpdatingOrderId(orderId);
-            await api.patch(`/admin/orders/${orderId}/status`, { status, remarks });
-            success("Order status updated");
-            
-            if (cancelModalOrder) {
-                setCancelModalOrder(null);
-                setCancelRemarks("");
+            setBulk({ label: "Preparing packing slips", done: 0, total: targets.length });
+            const full: SlipOrder[] = [];
+            for (let i = 0; i < targets.length; i++) {
+                const res = await api.get(`/admin/orders/${targets[i]._id}`);
+                full.push(res.data);
+                setBulk({ label: "Preparing packing slips", done: i + 1, total: targets.length });
             }
-            fetchOrders();
+            writePackingSlips(w, full);
         } catch (err) {
+            w.close();
             toastError(getErrorMessage(err));
         } finally {
-            setUpdatingOrderId(null);
+            setBulk(null);
         }
     };
 
-    const handleUpdatePaymentStatus = async (orderId: string, status: string) => {
-        try {
-            setUpdatingOrderId(orderId);
-            await api.patch(`/admin/orders/${orderId}/payment-status`, { status });
-            success("Payment status updated");
-            fetchOrders();
-        } catch (err) {
-            toastError(getErrorMessage(err));
-        } finally {
-            setUpdatingOrderId(null);
-        }
-    };
+    /* ---------- render ---------- */
 
-    const handleDownloadInvoice = async (e: React.MouseEvent, orderId: string, orderNumber: string) => {
-        e.stopPropagation();
-        try {
-            setUpdatingOrderId(orderId);
-            const res = await api.get(`/admin/orders/${orderId}/invoice`, {
-                responseType: "blob",
-            });
-            const url = window.URL.createObjectURL(new Blob([res.data]));
-            const link = document.createElement("a");
-            link.href = url;
-            link.setAttribute("download", `Invoice-${orderNumber}.pdf`);
-            document.body.appendChild(link);
-            link.click();
-            link.parentNode?.removeChild(link);
-            success("Invoice downloaded");
-        } catch (err) {
-            toastError("Failed to download invoice");
-        } finally {
-            setUpdatingOrderId(null);
-        }
-    };
-
-    const handleBulkDownload = async () => {
-        try {
-            setLoading(true);
-            const res = await api.get(`/admin/orders/bulk-invoice`, {
-                params: {
-                    search,
-                    status,
-                    paymentStatus,
-                    startDate,
-                    endDate
-                },
-                responseType: "blob",
-            });
-            const url = window.URL.createObjectURL(new Blob([res.data]));
-            const link = document.createElement("a");
-            link.href = url;
-            link.setAttribute("download", `Bulk-Invoices-${new Date().toISOString().split('T')[0]}.pdf`);
-            document.body.appendChild(link);
-            link.click();
-            link.parentNode?.removeChild(link);
-            success("Bulk invoices downloaded");
-        } catch (err) {
-            toastError("Failed to bulk download invoices (Ensure there are matching orders)");
-        } finally {
-            setLoading(false);
-        }
-    };
+    const busy = !!bulk;
 
     return (
-        <div className="space-y-8">
-            <section className="rounded-3xl border border-black/10 bg-white p-6 shadow-sm">
-                <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                        <div className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-text-secondary">
-                            Order Management
-                        </div>
-                        <h1 className="text-3xl font-semibold text-text-primary md:text-4xl">
-                            Orders
-                        </h1>
-                        <p className="mt-2 text-sm text-text-secondary">
-                            Track, review, and manage customer orders across fulfillment stages.
-                        </p>
-                    </div>
-
-                    <div className="flex gap-3">
-                        <button
-                            onClick={handleBulkDownload}
-                            disabled={loading || orders.length === 0}
-                            className="inline-flex items-center gap-2 rounded-xl bg-brand-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-primary/90 disabled:opacity-50"
-                        >
-                            {loading && !updatingOrderId ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <Download className="h-4 w-4" />
-                            )}
-                            Bulk Download
-                        </button>
-                        <button
-                            onClick={fetchOrders}
-                            className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5"
-                        >
-                            <RefreshCw className="h-4 w-4" />
-                            Refresh
-                        </button>
-                    </div>
+        <div className="space-y-6">
+            {/* Header */}
+            <section className="flex flex-col gap-4 rounded-3xl border border-black/10 bg-white p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                    <h1 className="text-3xl font-semibold text-text-primary">Orders</h1>
+                    <p className="mt-1 text-sm text-text-secondary">
+                        Pack the orders in "To pack" and book their pickup. Shiprocket then moves them to Shipped and Delivered automatically.
+                    </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        onClick={invoicesForView}
+                        disabled={busy || loading || orders.length === 0}
+                        className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5 disabled:opacity-50"
+                        title="Download one PDF with invoices for every order in this tab and filter"
+                    >
+                        <Download className="h-4 w-4" />
+                        Invoices for this view
+                    </button>
+                    <button
+                        onClick={refreshAll}
+                        disabled={busy}
+                        className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5 disabled:opacity-50"
+                    >
+                        <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                        Refresh
+                    </button>
                 </div>
             </section>
 
-            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard
-                    title="Orders On Page"
-                    value={orders.length}
-                    icon={<ShoppingBag className="h-4 w-4" />}
-                />
-                <StatCard
-                    title="Delivered"
-                    value={stats.delivered}
-                    icon={<PackageSearch className="h-4 w-4" />}
-                />
-                <StatCard
-                    title="In Transit"
-                    value={stats.inTransit}
-                    icon={<Truck className="h-4 w-4" />}
-                />
-                <StatCard
-                    title="Visible Revenue"
-                    value={`₹${stats.revenue.toLocaleString("en-IN")}`}
-                    icon={<CircleDollarSign className="h-4 w-4" />}
-                />
-            </section>
+            {/* Tabs */}
+            <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Order stages">
+                {ORDER_TABS.map((t) => {
+                    const active = t.key === tab.key;
+                    const n = counts[t.key];
+                    return (
+                        <button
+                            key={t.key}
+                            onClick={() => switchTab(t.key)}
+                            className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition ${active
+                                ? "border-brand-primary bg-brand-primary text-white"
+                                : "border-black/10 bg-white text-text-primary hover:bg-black/5"
+                                }`}
+                        >
+                            {t.label}
+                            {t.counted && typeof n === "number" && (
+                                <span
+                                    className={`min-w-6 rounded-full px-1.5 py-0.5 text-center text-xs font-semibold ${active
+                                        ? "bg-white/20 text-white"
+                                        : n > 0
+                                            ? "bg-amber-100 text-amber-800"
+                                            : "bg-black/5 text-text-secondary"
+                                        }`}
+                                >
+                                    {n}
+                                </span>
+                            )}
+                        </button>
+                    );
+                })}
+            </nav>
 
-            <section className="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_220px_200px_200px]">
-                    <div>
-                        <label className="mb-2 block text-sm font-medium text-text-primary">
-                            Search
-                        </label>
-                        <div className="relative">
-                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-                            <input
-                                placeholder="Order #, customer name, email..."
-                                value={search}
+            {/* Filters */}
+            <section className="flex flex-col gap-3 rounded-2xl border border-black/10 bg-white p-4 shadow-sm lg:flex-row lg:items-end">
+                <div className="flex-1">
+                    <label className="mb-1.5 block text-xs font-medium text-text-secondary">Search</label>
+                    <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
+                        <input
+                            placeholder="Order number, name, phone or email"
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
+                            className="w-full rounded-xl border border-black/10 bg-white py-2.5 pl-10 pr-4 text-sm outline-none transition placeholder:text-text-secondary focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+                    </div>
+                </div>
+
+                {tab.key === "all" && (
+                    <>
+                        <div className="lg:w-48">
+                            <label className="mb-1.5 block text-xs font-medium text-text-secondary">Status</label>
+                            <select
+                                value={statusAll}
                                 onChange={(e) => {
+                                    setStatusAll(e.target.value);
                                     setPage(1);
-                                    setSearch(e.target.value);
                                 }}
-                                className="w-full rounded-xl border border-black/10 bg-white py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-text-secondary focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
-                            />
+                                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                            >
+                                <option value="">Any status</option>
+                                {Object.entries(STATUS_LABEL).map(([value, label]) => (
+                                    <option key={value} value={value}>
+                                        {label}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
-                    </div>
+                        <div className="lg:w-44">
+                            <label className="mb-1.5 block text-xs font-medium text-text-secondary">Payment</label>
+                            <select
+                                value={paymentStatus}
+                                onChange={(e) => {
+                                    setPaymentStatus(e.target.value);
+                                    setPage(1);
+                                }}
+                                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                            >
+                                <option value="">Any payment</option>
+                                <option value="SUCCESS">Paid</option>
+                                <option value="PENDING">Pending</option>
+                                <option value="FAILED">Failed</option>
+                                <option value="REFUNDED">Refunded</option>
+                            </select>
+                        </div>
+                    </>
+                )}
 
+                <div className="grid grid-cols-2 gap-3 lg:w-80">
                     <div>
-                        <label className="mb-2 block text-sm font-medium text-text-primary">
-                            Order Status
-                        </label>
-                        <select
-                            value={status}
-                            onChange={(e) => {
-                                setPage(1);
-                                setStatus(e.target.value);
-                            }}
-                            className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
-                        >
-                            <option value="">All statuses</option>
-                            <option value="PLACED">Placed (COD)</option>
-                            <option value="PAYMENT_SUCCESS">Payment Success</option>
-                            <option value="READY_TO_SHIP">Ready To Ship</option>
-                            <option value="SHIPPED">Shipped</option>
-                            <option value="DELIVERED">Delivered</option>
-                            <option value="CANCELLED">Cancelled</option>
-                            <option value="RETURN_REQUESTED">Return Requested</option>
-                            <option value="RETURN_APPROVED">Return Approved</option>
-                            <option value="REFUNDED">Refunded</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="mb-2 block text-sm font-medium text-text-primary">
-                            Payment Status
-                        </label>
-                        <select
-                            value={paymentStatus}
-                            onChange={(e) => {
-                                setPage(1);
-                                setPaymentStatus(e.target.value);
-                            }}
-                            className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
-                        >
-                            <option value="">All payments</option>
-                            <option value="SUCCESS">Success</option>
-                            <option value="PENDING">Pending</option>
-                            <option value="FAILED">Failed</option>
-                            <option value="REFUNDED">Refunded</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="mb-2 block text-sm font-medium text-text-primary">
-                            From Date
-                        </label>
+                        <label className="mb-1.5 block text-xs font-medium text-text-secondary">From</label>
                         <input
                             type="date"
                             value={startDate}
+                            max={endDate || undefined}
                             onChange={(e) => {
-                                setPage(1);
                                 setStartDate(e.target.value);
+                                setPage(1);
                             }}
-                            className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
                         />
                     </div>
-
                     <div>
-                        <label className="mb-2 block text-sm font-medium text-text-primary">
-                            To Date
-                        </label>
+                        <label className="mb-1.5 block text-xs font-medium text-text-secondary">To</label>
                         <input
                             type="date"
                             value={endDate}
+                            min={startDate || undefined}
                             onChange={(e) => {
-                                setPage(1);
                                 setEndDate(e.target.value);
+                                setPage(1);
                             }}
-                            className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
                         />
                     </div>
-
-                    <div className="flex items-end">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setSearch("");
-                                setStatus("");
-                                setPaymentStatus("");
-                                setStartDate("");
-                                setEndDate("");
-                                setPage(1);
-                            }}
-                            className="w-full rounded-xl border border-black/10 px-4 py-3 text-sm font-medium text-text-primary transition hover:bg-black/5"
-                        >
-                            Clear filters
-                        </button>
-                    </div>
                 </div>
+
+                {hasFilters && (
+                    <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-medium text-text-secondary transition hover:bg-black/5"
+                    >
+                        <X className="h-4 w-4" />
+                        Clear
+                    </button>
+                )}
             </section>
 
-            {loading ? (
-                <OrdersTableSkeleton />
+            {/* Bulk bar */}
+            {(selected.size > 0 || bulk) && (
+                <section className="sticky top-2 z-10 flex flex-col gap-3 rounded-2xl border border-brand-primary/30 bg-brand-primary/5 px-4 py-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+                    {bulk ? (
+                        <div className="flex items-center gap-3 text-sm font-medium text-text-primary">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            {bulk.label}… {bulk.total > 1 ? `${bulk.done} of ${bulk.total}` : ""}
+                        </div>
+                    ) : (
+                        <>
+                            <div className="text-sm font-medium text-text-primary">
+                                {selected.size} selected
+                                <button
+                                    onClick={() => setSelected(new Set())}
+                                    className="ml-3 text-xs font-normal text-text-secondary underline-offset-2 hover:underline"
+                                >
+                                    Clear selection
+                                </button>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {bulkStep && (
+                                    <button
+                                        onClick={() => advanceSelected(bulkStep)}
+                                        className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-primary/90"
+                                    >
+                                        {bulkStep.label} ({selected.size})
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => printSlips(selectedOrders)}
+                                    className="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-medium text-text-primary transition hover:bg-black/5"
+                                >
+                                    <Printer className="h-4 w-4" />
+                                    Packing slips
+                                </button>
+                                <button
+                                    onClick={invoicesSelected}
+                                    className="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-medium text-text-primary transition hover:bg-black/5"
+                                >
+                                    <Download className="h-4 w-4" />
+                                    Invoices
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </section>
+            )}
+
+            {/* List */}
+            {loading && orders.length === 0 ? (
+                <div className="space-y-3 rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="h-14 animate-pulse rounded-xl bg-black/5" />
+                    ))}
+                </div>
             ) : error ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
-                    {error}
+                <div className="flex items-center justify-between gap-4 rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 shadow-sm">
+                    <span>{error}</span>
+                    <button onClick={fetchOrders} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 font-medium hover:bg-red-100">
+                        Try again
+                    </button>
                 </div>
             ) : orders.length === 0 ? (
                 <div className="rounded-2xl border border-black/10 bg-white px-6 py-14 text-center shadow-sm">
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-black/5">
                         <PackageSearch className="h-5 w-5 text-text-secondary" />
                     </div>
-                    <h3 className="mt-4 text-base font-semibold text-text-primary">
-                        No orders found
-                    </h3>
-                    <p className="mt-2 text-sm text-text-secondary">
-                        Try changing your search or filter selections.
+                    <p className="mt-4 text-base font-semibold text-text-primary">
+                        {hasFilters ? "No orders match these filters." : tab.empty}
                     </p>
                 </div>
             ) : (
-                <div className="overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm">
-                    <div className="flex flex-col gap-3 border-b border-black/10 px-6 py-4 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <h2 className="text-sm font-semibold uppercase tracking-wide text-text-primary">
-                                Order List
-                            </h2>
-                            <p className="mt-1 text-sm text-text-secondary">
-                                Click any row to open the full order details.
-                            </p>
-                        </div>
-
-                        <div className="text-xs text-text-secondary">
-                            {orders.length} order{orders.length > 1 ? "s" : ""} shown
-                        </div>
-                    </div>
-
+                <div className={`overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm transition ${loading ? "opacity-60" : ""}`}>
                     <div className="overflow-x-auto">
-                        <table className="w-full min-w-225 text-sm">
+                        <table className="w-full min-w-200 text-sm">
                             <thead className="bg-gray-50 text-left text-xs uppercase tracking-wider text-text-secondary">
                                 <tr>
-                                    <th className="px-6 py-4">Order</th>
-                                    <th className="px-6 py-4">Customer</th>
-                                    <th className="px-6 py-4">Amount</th>
-                                    <th className="px-6 py-4">Order Status</th>
-                                    <th className="px-6 py-4">Payment</th>
-                                    <th className="px-6 py-4">Date</th>
-                                    <th className="px-6 py-4 text-right">Actions</th>
+                                    <th className="w-12 px-4 py-3">
+                                        <input
+                                            type="checkbox"
+                                            aria-label="Select all orders on this page"
+                                            checked={allOnPageSelected}
+                                            onChange={toggleAll}
+                                            disabled={busy}
+                                            className="h-4 w-4 cursor-pointer accent-(--color-brand-primary)"
+                                        />
+                                    </th>
+                                    <th className="px-4 py-3">Order</th>
+                                    <th className="px-4 py-3">Customer</th>
+                                    <th className="px-4 py-3">Amount</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3 text-right">Next step</th>
                                 </tr>
                             </thead>
-
                             <tbody>
-                                {orders.map((order) => (
-                                    <tr
-                                        key={order._id}
-                                        onClick={() => router.push(`/admin/orders/${order._id}`)}
-                                        className="cursor-pointer border-t border-black/10 transition hover:bg-gray-50"
-                                    >
-                                        <td className="px-6 py-4">
-                                            <div className="font-semibold text-text-primary">
-                                                #{order.orderNumber}
-                                            </div>
-                                            <div className="mt-1 text-xs text-text-secondary">
-                                                ID: {order._id.slice(-8).toUpperCase()}
-                                            </div>
-                                        </td>
-
-                                        <td className="px-6 py-4">
-                                            <div className="font-medium text-text-primary">
-                                                {order.customerSnapshot.name}
-                                            </div>
-                                            <div className="mt-1 text-xs text-text-secondary">
-                                                {order.customerSnapshot.email}
-                                            </div>
-                                            <div className="text-xs text-text-secondary">
-                                                {order.customerSnapshot.phone}
-                                            </div>
-                                        </td>
-
-                                        <td className="px-6 py-4 font-semibold text-text-primary">
-                                            ₹{order.grandTotal.toLocaleString("en-IN")}
-                                        </td>
-
-                                        <td className="px-6 py-4">
-                                            <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
-                                                <select
-                                                    value={order.status}
-                                                    onChange={(e) => handleUpdateStatus(order._id, e.target.value)}
-                                                    disabled={updatingOrderId === order._id || ["DELIVERED", "CANCELLED", "REFUNDED"].includes(order.status)}
-                                                    className={`appearance-none rounded-full px-3 py-1 text-xs font-medium border-0 cursor-pointer pr-8 focus:ring-2 focus:ring-black/10 disabled:opacity-70 ${getStatusColor(order.status)}`}
-                                                >
-                                                    <option value="PLACED">PLACED</option>
-                                                    <option value="PAYMENT_PENDING">PAYMENT PENDING</option>
-                                                    <option value="PAYMENT_SUCCESS">PAYMENT SUCCESS</option>
-                                                    <option value="READY_TO_SHIP">READY TO SHIP</option>
-                                                    <option value="SHIPPED">SHIPPED</option>
-                                                    <option value="DELIVERED">DELIVERED</option>
-                                                    <option value="CANCELLED">CANCELLED</option>
-                                                    <option value="RETURN_REQUESTED">RETURN REQUESTED</option>
-                                                    <option value="RETURN_APPROVED">RETURN APPROVED</option>
-                                                    <option value="REFUNDED">REFUNDED</option>
-                                                </select>
-                                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-current opacity-50">
-                                                    <svg className="h-3 w-3 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" /></svg>
+                                {orders.map((order) => {
+                                    const step = nextStep(order);
+                                    const isSelected = selected.has(order._id);
+                                    const isBusy = rowBusy === order._id;
+                                    return (
+                                        <tr
+                                            key={order._id}
+                                            onClick={() => router.push(`/admin/orders/${order._id}`)}
+                                            className={`cursor-pointer border-t border-black/10 transition hover:bg-gray-50 ${isSelected ? "bg-brand-primary/5" : ""}`}
+                                        >
+                                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                                <input
+                                                    type="checkbox"
+                                                    aria-label={`Select order ${order.orderNumber}`}
+                                                    checked={isSelected}
+                                                    onChange={() => toggleOne(order._id)}
+                                                    disabled={busy}
+                                                    className="h-4 w-4 cursor-pointer accent-(--color-brand-primary)"
+                                                />
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="font-semibold text-text-primary">#{order.orderNumber}</div>
+                                                <div className="mt-0.5 text-xs text-text-secondary">{formatDate(order.createdAt)}</div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="font-medium text-text-primary">{order.customerSnapshot.name}</div>
+                                                <div className="mt-0.5 text-xs text-text-secondary">{order.customerSnapshot.phone}</div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="font-semibold text-text-primary">{formatINR(order.grandTotal)}</div>
+                                                <div className="mt-0.5 text-xs text-text-secondary">{order.payment.method || "Online"}</div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex flex-col items-start gap-1">
+                                                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${statusBadgeClass(order.status)}`}>
+                                                        {statusLabel(order.status)}
+                                                    </span>
+                                                    {order.payment.status !== "SUCCESS" && (
+                                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${paymentBadgeClass(order.payment.status)}`}>
+                                                            {paymentLabel(order.payment.status)}
+                                                        </span>
+                                                    )}
                                                 </div>
-                                            </div>
-                                        </td>
-
-                                        <td className="px-6 py-4">
-                                            <div className="flex flex-col items-start gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                                <div className="relative inline-block">
-                                                    <select
-                                                        value={order.payment.status}
-                                                        onChange={(e) => handleUpdatePaymentStatus(order._id, e.target.value)}
-                                                        disabled={updatingOrderId === order._id || order.payment.method !== "COD" || order.payment.status === "SUCCESS"}
-                                                        className={`appearance-none rounded-full px-3 py-1 text-xs font-medium border-0 cursor-pointer pr-8 focus:ring-2 focus:ring-black/10 disabled:opacity-70 ${getPaymentColor(order.payment.status)}`}
+                                            </td>
+                                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center justify-end gap-2">
+                                                    {step ? (
+                                                        <button
+                                                            onClick={() => advanceOne(order, step)}
+                                                            disabled={isBusy || busy}
+                                                            className={`inline-flex min-w-32 items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold text-white transition disabled:opacity-50 ${step.to === "DELIVERED" ? "bg-green-600 hover:bg-green-700" : "bg-brand-primary hover:bg-brand-primary/90"}`}
+                                                        >
+                                                            {isBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                                            {step.label}
+                                                        </button>
+                                                    ) : order.status === "RETURN_REQUESTED" ? (
+                                                        <button
+                                                            onClick={() => router.push(`/admin/orders/${order._id}`)}
+                                                            className="min-w-32 rounded-xl bg-orange-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-orange-700"
+                                                        >
+                                                            Review return
+                                                        </button>
+                                                    ) : (
+                                                        <span className="min-w-32 text-center text-xs text-text-secondary">—</span>
+                                                    )}
+                                                    <button
+                                                        onClick={() => printSlips([order])}
+                                                        disabled={busy}
+                                                        title="Print packing slip"
+                                                        aria-label={`Print packing slip for ${order.orderNumber}`}
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-text-secondary transition hover:bg-black/5 hover:text-text-primary disabled:opacity-50"
                                                     >
-                                                        <option value="PENDING">PENDING</option>
-                                                        <option value="SUCCESS">SUCCESS</option>
-                                                        <option value="FAILED">FAILED</option>
-                                                        <option value="REFUNDED">REFUNDED</option>
-                                                    </select>
-                                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-current opacity-50">
-                                                        <svg className="h-3 w-3 fill-current" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" /></svg>
-                                                    </div>
+                                                        <Printer className="h-4 w-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => invoiceOne(order)}
+                                                        disabled={isBusy || busy}
+                                                        title="Download invoice"
+                                                        aria-label={`Download invoice for ${order.orderNumber}`}
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-text-secondary transition hover:bg-black/5 hover:text-text-primary disabled:opacity-50"
+                                                    >
+                                                        <Download className="h-4 w-4" />
+                                                    </button>
                                                 </div>
-                                                <span className="inline-flex rounded text-xs font-semibold text-text-secondary bg-gray-100 px-2 py-0.5">
-                                                    {order.payment.method || "PAYU"}
-                                                </span>
-                                            </div>
-                                        </td>
-
-                                        <td className="px-6 py-4 text-text-secondary">
-                                            {new Date(order.createdAt).toLocaleDateString("en-IN", {
-                                                day: "2-digit",
-                                                month: "short",
-                                                year: "numeric",
-                                            })}
-                                        </td>
-                                        
-                                        <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={(e) => handleDownloadInvoice(e, order._id, order.orderNumber)}
-                                                disabled={updatingOrderId === order._id}
-                                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 bg-white text-text-secondary transition hover:bg-black/5 hover:text-text-primary disabled:opacity-50"
-                                                title="Download Invoice"
-                                            >
-                                                {updatingOrderId === order._id ? (
-                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                ) : (
-                                                    <Download className="h-4 w-4" />
-                                                )}
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
                 </div>
             )}
 
-            {/* Cancel Order Modal */}
-            {cancelModalOrder && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-                    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-                        <h3 className="text-lg font-semibold text-text-primary">Cancel Order #{cancelModalOrder.orderNumber}</h3>
-                        <p className="mt-1 text-sm text-text-secondary">
-                            Please provide a reason for cancelling this order.
-                            {cancelModalOrder.payment.status === "SUCCESS" && " A refund will be automatically initiated for this prepaid order."}
-                        </p>
-
-                        <div className="mt-4">
-                            <label className="mb-2 block text-sm font-medium text-text-primary">Cancellation Remarks</label>
-                            <textarea
-                                value={cancelRemarks}
-                                onChange={(e) => setCancelRemarks(e.target.value)}
-                                placeholder="E.g., Out of stock, customer requested, etc."
-                                className="w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
-                                rows={3}
-                            />
-                        </div>
-
-                        <div className="mt-6 flex justify-end gap-3">
-                            <button
-                                onClick={() => {
-                                    setCancelModalOrder(null);
-                                    setCancelRemarks("");
-                                }}
-                                disabled={updatingOrderId === cancelModalOrder._id}
-                                className="rounded-xl px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-black/5 disabled:opacity-50"
-                            >
-                                Close
-                            </button>
-                            <button
-                                onClick={() => handleUpdateStatus(cancelModalOrder._id, "CANCELLED", cancelRemarks)}
-                                disabled={!cancelRemarks.trim() || updatingOrderId === cancelModalOrder._id}
-                                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
-                            >
-                                {updatingOrderId === cancelModalOrder._id && <Loader2 className="h-4 w-4 animate-spin" />}
-                                Confirm Cancellation
-                            </button>
-                        </div>
+            {/* Pagination */}
+            {pages > 1 && (
+                <div className="flex items-center justify-between gap-3">
+                    <button
+                        disabled={page <= 1 || loading}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        <ChevronLeft className="h-4 w-4" />
+                        Previous
+                    </button>
+                    <div className="text-sm text-text-secondary">
+                        Page <span className="font-medium text-text-primary">{page}</span> of{" "}
+                        <span className="font-medium text-text-primary">{pages}</span>
                     </div>
+                    <button
+                        disabled={page >= pages || loading}
+                        onClick={() => setPage((p) => Math.min(pages, p + 1))}
+                        className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        Next
+                        <ChevronRight className="h-4 w-4" />
+                    </button>
                 </div>
             )}
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <button
-                    disabled={page === 1}
-                    onClick={() => setPage((p) => p - 1)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                    <ChevronLeft className="h-4 w-4" />
-                    Previous
-                </button>
-
-                <div className="text-sm text-text-secondary">
-                    Page <span className="font-medium text-text-primary">{page}</span> of{" "}
-                    <span className="font-medium text-text-primary">{pages}</span>
-                </div>
-
-                <button
-                    disabled={page === pages}
-                    onClick={() => setPage((p) => p + 1)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                    Next
-                    <ChevronRight className="h-4 w-4" />
-                </button>
-            </div>
+            <ConfirmDialog
+                open={!!confirm}
+                title={confirm?.title}
+                description={confirm?.description}
+                confirmText={confirm?.confirmText}
+                cancelText="Not now"
+                tone={confirm?.tone ?? "default"}
+                loading={confirmLoading}
+                onClose={() => {
+                    if (!confirmLoading) setConfirm(null);
+                }}
+                onConfirm={runConfirm}
+            />
         </div>
     );
 }

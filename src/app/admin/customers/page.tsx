@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import axios from "@/lib/api";
+import { useToast } from "@/components/ui/ToastProvider";
+import { getErrorMessage } from "@/lib/getErrorMessage";
 import Link from "next/link";
 
 /* ================= TYPES ================= */
@@ -18,6 +20,7 @@ interface Customer {
 }
 
 export default function AdminCustomersPage() {
+    const { error: toastError } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -66,6 +69,7 @@ export default function AdminCustomersPage() {
                 setPages(data.pages);
             } catch (error) {
                 console.error("FETCH CUSTOMERS ERROR:", error);
+                toastError(getErrorMessage(error));
             } finally {
                 setLoading(false);
             }

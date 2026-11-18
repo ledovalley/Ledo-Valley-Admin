@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import axios from "@/lib/api";
+import { useToast } from "@/components/ui/ToastProvider";
+import { getErrorMessage } from "@/lib/getErrorMessage";
 
 /* ================= TYPES ================= */
 
@@ -18,6 +20,7 @@ interface Review {
 }
 
 export default function AdminReviewsPage() {
+    const { error: toastError } = useToast();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -39,6 +42,7 @@ export default function AdminReviewsPage() {
       setReviews(data);
     } catch (error) {
       console.error("FETCH REVIEWS ERROR:", error);
+      toastError(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -58,6 +62,7 @@ export default function AdminReviewsPage() {
       fetchReviews();
     } catch (error) {
       console.error("DELETE ERROR:", error);
+      toastError(getErrorMessage(error));
     }
   };
 
@@ -67,6 +72,7 @@ export default function AdminReviewsPage() {
       fetchReviews();
     } catch (error) {
       console.error("UPDATE STATUS ERROR:", error);
+      toastError(getErrorMessage(error));
     }
   };
 
@@ -78,6 +84,7 @@ export default function AdminReviewsPage() {
       fetchReviews();
     } catch (error) {
       console.error("TESTIMONIAL ERROR:", error);
+      toastError(getErrorMessage(error));
     }
   };
 

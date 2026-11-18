@@ -1,4 +1,5 @@
 import axios from "axios";
+import { clearToken, getToken } from "@/lib/auth";
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL,
@@ -6,9 +7,7 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const token =
-      localStorage.getItem("admin_token") ||
-      sessionStorage.getItem("admin_token");
+    const token = getToken();
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -25,8 +24,7 @@ api.interceptors.response.use(
       typeof window !== "undefined" &&
       error.response?.status === 401
     ) {
-      localStorage.removeItem("admin_token");
-      sessionStorage.removeItem("admin_token");
+      clearToken();
 
       window.location.href = "/admin/login";
     }

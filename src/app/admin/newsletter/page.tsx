@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import axios from "@/lib/api";
+import { useToast } from "@/components/ui/ToastProvider";
+import { getErrorMessage } from "@/lib/getErrorMessage";
 
 interface Subscriber {
     _id: string;
@@ -22,6 +24,7 @@ interface Campaign {
 }
 
 export default function AdminNewsletterPage() {
+    const { success: toastSuccess, error: toastError } = useToast();
     const [tab, setTab] = useState<"subscribers" | "campaigns">("subscribers");
 
     const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
@@ -50,6 +53,7 @@ export default function AdminNewsletterPage() {
 
             } catch (error) {
                 console.error("FETCH ERROR:", error);
+                toastError(getErrorMessage(error));
             } finally {
                 setLoading(false);
             }
@@ -60,18 +64,32 @@ export default function AdminNewsletterPage() {
 
     /* ================= SEND CAMPAIGN ================= */
 
+    const [sending, setSending] = useState(false);
+
     const sendCampaign = async () => {
+        if (sending) return;
+        if (!subject.trim() || !htmlContent.trim()) {
+            toastError("Add a subject and content before sending.");
+            return;
+        }
+        if (!window.confirm(`Send "${subject.trim()}" to all active subscribers now? This can't be undone.`)) return;
+
         try {
+            setSending(true);
             await axios.post("/admin/newsletter/send", {
                 subject,
                 htmlContent,
             });
 
+            toastSuccess("Campaign sent.");
             setShowCreate(false);
             setSubject("");
             setHtmlContent("");
         } catch (error) {
             console.error("SEND ERROR:", error);
+            toastError(getErrorMessage(error));
+        } finally {
+            setSending(false);
         }
     };
 
@@ -365,9 +383,10 @@ export default function AdminNewsletterPage() {
 
                             <button
                                 onClick={sendCampaign}
+                                disabled={sending}
                                 className="px-7 py-2.5 bg-black text-white rounded-xl text-sm font-medium hover:opacity-90 transition disabled:opacity-60"
                             >
-                                Send Campaign
+                                {sending ? "Sending…" : "Send Campaign"}
                             </button>
 
                         </div>

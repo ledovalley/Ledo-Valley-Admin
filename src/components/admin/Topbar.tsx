@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { clearToken } from "@/lib/auth";
 import {
   LogOut,
   ShieldCheck,
@@ -21,8 +22,7 @@ export default function Topbar() {
     setLoggingOut(true);
 
     try {
-      localStorage.removeItem("admin_token");
-      sessionStorage.removeItem("admin_token");
+      clearToken();
 
       await new Promise((r) => setTimeout(r, 300));
       router.replace("/admin/login");

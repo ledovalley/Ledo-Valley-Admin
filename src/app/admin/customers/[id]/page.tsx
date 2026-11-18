@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import axios from "@/lib/api";
+import { useToast } from "@/components/ui/ToastProvider";
+import { getErrorMessage } from "@/lib/getErrorMessage";
 import { useParams } from "next/navigation";
 
 /* ================= TYPES ================= */
@@ -44,6 +46,7 @@ interface StatCardProps {
 /* ================= PAGE ================= */
 
 export default function CustomerProfilePage() {
+    const { error: toastError } = useToast();
     const params = useParams();
     const id = params?.id as string;
 
@@ -59,6 +62,7 @@ export default function CustomerProfilePage() {
                 setData(res.data);
             } catch (error) {
                 console.error("PROFILE FETCH ERROR:", error);
+                toastError(getErrorMessage(error));
             } finally {
                 setLoading(false);
             }

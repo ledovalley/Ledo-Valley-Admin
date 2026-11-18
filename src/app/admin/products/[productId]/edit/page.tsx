@@ -1,7 +1,8 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useToast } from "@/components/ui/ToastProvider";
 import api from "@/lib/api";
 import { getErrorMessage } from "@/lib/getErrorMessage";
 import StepAddVariants from "@/components/admin/products/CreateProductModal/StepAddVariants";
@@ -104,11 +105,15 @@ function InfoPill({
 export default function EditProductPage() {
   const { productId } = useParams<{ productId: string }>();
   const router = useRouter();
+  const { success: toastSuccess } = useToast();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // loading error
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Raw text of the "Best for" box, so commas and spaces can be typed freely.
+  const [bestForText, setBestForText] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
   useEffect(() => {
@@ -120,7 +125,10 @@ export default function EditProductPage() {
         setError(null);
 
         const res = await api.get(`/admin/products/${productId}`);
-        if (mounted) setProduct(res.data);
+        if (mounted) {
+          setProduct(res.data);
+          setBestForText((res.data.bestFor ?? []).join(", "));
+        }
       } catch (err) {
         if (mounted) setError(getErrorMessage(err));
       } finally {
@@ -140,7 +148,7 @@ export default function EditProductPage() {
 
     try {
       setSaving(true);
-      setError(null);
+      setSaveError(null);
 
       await api.put(`/admin/products/${productId}`, {
         name: product.name,
@@ -156,8 +164,10 @@ export default function EditProductPage() {
         hour: "2-digit",
         minute: "2-digit",
       }));
+      toastSuccess("Product saved.");
     } catch (err) {
-      setError(getErrorMessage(err));
+      // Keep the editor open so unsaved changes aren't lost.
+      setSaveError(getErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -170,10 +180,6 @@ export default function EditProductPage() {
   const isNameValid = !!product?.name.trim();
 
   const canSave = !!product && isTeaTypeValid && isNameValid && !saving;
-
-  const bestForInput = useMemo(() => {
-    return product?.bestFor.join(", ") ?? "";
-  }, [product?.bestFor]);
 
   if (loading) {
     return (
@@ -192,7 +198,7 @@ export default function EditProductPage() {
     );
   }
 
-  if (!product || error) {
+  if (!product) {
     return (
       <div className="rounded-2xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-warning">
         {error || "Product not found"}
@@ -278,9 +284,9 @@ export default function EditProductPage() {
         </div>
       </section>
 
-      {error && (
-        <div className="rounded-2xl border border-yellow-200 bg-yellow-50 px-4 py-3 text-sm text-warning">
-          {error}
+      {saveError && (
+        <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Couldn&apos;t save: {saveError}. Your changes are still here, so you can try again.
         </div>
       )}
 
@@ -365,16 +371,17 @@ export default function EditProductPage() {
                   Best for
                 </label>
                 <input
-                  value={bestForInput}
-                  onChange={(e) =>
+                  value={bestForText}
+                  onChange={(e) => {
+                    setBestForText(e.target.value);
                     setProduct({
                       ...product,
                       bestFor: e.target.value
                         .split(",")
                         .map((v) => v.trim())
                         .filter(Boolean),
-                    })
-                  }
+                    });
+                  }}
                   className="w-full rounded-xl border border-bg-dark/10 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-text-secondary focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
                   placeholder="Example: Morning routine, gifting, immunity"
                 />

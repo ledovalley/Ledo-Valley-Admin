@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "@/lib/api";
+import { useToast } from "@/components/ui/ToastProvider";
+import { getErrorMessage } from "@/lib/getErrorMessage";
 import Image from "next/image";
 import {
     Trash2,
@@ -28,6 +30,7 @@ interface Banner {
 }
 
 export default function AdminHomeBannersPage() {
+    const { success: toastSuccess, error: toastError } = useToast();
     const [banners, setBanners] = useState<Banner[]>([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
@@ -46,6 +49,7 @@ export default function AdminHomeBannersPage() {
             setBanners(data);
         } catch (error) {
             console.error("FETCH ERROR:", error);
+            toastError(getErrorMessage(error));
         } finally {
             setLoading(false);
         }
@@ -106,9 +110,11 @@ export default function AdminHomeBannersPage() {
             setTitle("");
             setSubtitle("");
 
+            toastSuccess("Banner uploaded.");
             fetchBanners();
         } catch (error) {
             console.error("CREATE ERROR:", error);
+            toastError(getErrorMessage(error));
         } finally {
             setUploading(false);
         }
@@ -117,13 +123,22 @@ export default function AdminHomeBannersPage() {
     const deleteBanner = async (id: string) => {
         if (!confirm("Delete banner?")) return;
 
-        await axios.delete(`/admin/home-banner/${id}`);
-        fetchBanners();
+        try {
+            await axios.delete(`/admin/home-banner/${id}`);
+            toastSuccess("Banner deleted.");
+            fetchBanners();
+        } catch (error) {
+            toastError(getErrorMessage(error));
+        }
     };
 
     const toggleBanner = async (id: string) => {
-        await axios.patch(`/admin/home-banner/${id}/toggle`);
-        fetchBanners();
+        try {
+            await axios.patch(`/admin/home-banner/${id}/toggle`);
+            fetchBanners();
+        } catch (error) {
+            toastError(getErrorMessage(error));
+        }
     };
 
     const stats = useMemo(() => {

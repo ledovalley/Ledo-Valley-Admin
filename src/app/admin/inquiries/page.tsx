@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "@/lib/api";
+import { useToast } from "@/components/ui/ToastProvider";
+import { getErrorMessage } from "@/lib/getErrorMessage";
 import {
     Search,
     Filter,
@@ -38,6 +40,7 @@ const statusStyles: Record<Inquiry["status"], string> = {
 };
 
 export default function AdminContactPage() {
+    const { error: toastError } = useToast();
     const [inquiries, setInquiries] = useState<Inquiry[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -62,6 +65,7 @@ export default function AdminContactPage() {
             setPages(data.pages);
         } catch (error) {
             console.error("FETCH INQUIRIES ERROR:", error);
+            toastError(getErrorMessage(error));
         } finally {
             setLoading(false);
         }
@@ -86,6 +90,7 @@ export default function AdminContactPage() {
             fetchInquiries();
         } catch (error) {
             console.error("UPDATE ERROR:", error);
+            toastError(getErrorMessage(error));
         } finally {
             setSaving(false);
         }

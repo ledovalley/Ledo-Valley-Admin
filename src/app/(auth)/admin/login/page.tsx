@@ -132,6 +132,9 @@ export default function AdminLoginPage() {
 
                   <button
                     type="button"
+                    onClick={() =>
+                      setError("Ask the site owner to reset your admin password.")
+                    }
                     className="text-xs font-medium text-(--color-brand-primary) hover:opacity-80"
                   >
                     Forgot password?
