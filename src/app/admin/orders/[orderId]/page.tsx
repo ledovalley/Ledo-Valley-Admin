@@ -84,6 +84,8 @@ interface Order {
     };
     returnInfo?: {
         status: string;
+        reason?: string;
+        rejectionReason?: string;
     };
     shipping?: {
         shiprocketOrderId?: string;
@@ -146,6 +148,8 @@ export default function OrderDetailsPage() {
 
     const [cancelOpen, setCancelOpen] = useState(false);
     const [cancelRemarks, setCancelRemarks] = useState("");
+    const [rejectOpen, setRejectOpen] = useState(false);
+    const [rejectRemarks, setRejectRemarks] = useState("");
 
     const fetchOrder = useCallback(async () => {
         try {
@@ -190,6 +194,24 @@ export default function OrderDetailsPage() {
             success(`Order #${order.orderNumber} cancelled.`);
             setCancelOpen(false);
             setCancelRemarks("");
+            await fetchOrder();
+        } catch (err) {
+            showError(getErrorMessage(err));
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const submitReject = async () => {
+        if (!order || !rejectRemarks.trim()) return;
+        try {
+            setActionLoading(true);
+            await api.patch(`/admin/orders/${order._id}/reject-return`, {
+                remarks: rejectRemarks.trim(),
+            });
+            success("Return rejected.");
+            setRejectOpen(false);
+            setRejectRemarks("");
             await fetchOrder();
         } catch (err) {
             showError(getErrorMessage(err));
@@ -267,9 +289,30 @@ export default function OrderDetailsPage() {
     const addr = order.shippingAddress;
     const shipPhone = addr.phone || order.customerSnapshot.phone;
     const isCodPending = order.payment.method === "COD" && order.payment.status === "PENDING";
+    const refundPending = cancelled && order.payment.status === "REFUND_PENDING";
 
     const secondaryActions: { label: string; className: string; onClick: () => void }[] = [];
+    if (refundPending) {
+        secondaryActions.push({
+            label: `Refund ${formatINR(order.grandTotal)} now`,
+            className: "bg-red-600 text-white hover:bg-red-700",
+            onClick: () =>
+                setConfirm({
+                    title: `Refund ${formatINR(order.grandTotal)} to the customer?`,
+                    description: "The customer cancelled this paid order. This sends the full amount back through PayU.",
+                    confirmText: "Refund now",
+                    tone: "danger",
+                    request: () => api.patch(`/admin/orders/${order._id}/refund-cancelled`),
+                    successMessage: "Refund started.",
+                }),
+        });
+    }
     if (order.status === "RETURN_REQUESTED") {
+        secondaryActions.push({
+            label: "Reject return",
+            className: "border border-red-200 bg-white text-red-700 hover:bg-red-50",
+            onClick: () => setRejectOpen(true),
+        });
         secondaryActions.push({
             label: "Approve return",
             className: "bg-orange-600 text-white hover:bg-orange-700",
@@ -379,6 +422,14 @@ export default function OrderDetailsPage() {
                             {order.cancellationReason && (
                                 <p className="mt-1 text-sm text-red-700">Reason: {order.cancellationReason}</p>
                             )}
+                            {refundPending && (
+                                <p className="mt-1 text-sm font-medium text-red-800">
+                                    The customer paid {formatINR(order.grandTotal)} and hasn&apos;t been refunded yet.
+                                </p>
+                            )}
+                            {order.payment.status === "REFUNDED" && (
+                                <p className="mt-1 text-sm text-red-700">Refund sent to the customer.</p>
+                            )}
                         </div>
                     ) : (
                         <ol className="grid grid-cols-4 gap-2">
@@ -416,8 +467,10 @@ export default function OrderDetailsPage() {
                         <div className="text-sm text-text-secondary">
                             {step
                                 ? <>Next: <span className="font-medium text-text-primary">{step.hint}</span></>
+                                : refundPending
+                                    ? "Refund the customer for this cancelled order."
                                 : order.status === "RETURN_REQUESTED"
-                                    ? "The customer has asked to return this order."
+                                    ? `The customer has asked to return this order${order.returnInfo?.reason ? `: “${order.returnInfo.reason}”` : "."}`
                                     : order.status === "PAYMENT_PENDING"
                                         ? "Waiting for the customer's payment. Nothing to do yet."
                                         : secondaryActions.length
@@ -619,6 +672,12 @@ export default function OrderDetailsPage() {
                                 <span className="inline-flex rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
                                     {order.returnInfo.status.replaceAll("_", " ").toLowerCase()}
                                 </span>
+                                {order.returnInfo.reason && (
+                                    <p className="mt-3 text-sm text-text-primary">Customer&apos;s reason: {order.returnInfo.reason}</p>
+                                )}
+                                {order.returnInfo.rejectionReason && (
+                                    <p className="mt-2 text-sm text-text-secondary">Rejected because: {order.returnInfo.rejectionReason}</p>
+                                )}
                             </Card>
                         )}
                     </div>
@@ -675,6 +734,44 @@ export default function OrderDetailsPage() {
                             >
                                 {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
                                 Cancel order
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {rejectOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+                    <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                        <h3 className="text-lg font-semibold text-text-primary">Reject return for #{order.orderNumber}?</h3>
+                        <p className="mt-1 text-sm text-text-secondary">The customer won&apos;t be refunded. Tell them why.</p>
+                        <label className="mb-2 mt-4 block text-sm font-medium text-text-primary">Reason</label>
+                        <textarea
+                            autoFocus
+                            value={rejectRemarks}
+                            onChange={(e) => setRejectRemarks(e.target.value)}
+                            placeholder="E.g. no photos of damage, outside the return window"
+                            rows={3}
+                            className="w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+                        <div className="mt-5 flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setRejectOpen(false);
+                                    setRejectRemarks("");
+                                }}
+                                disabled={actionLoading}
+                                className="rounded-xl px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-black/5 disabled:opacity-50"
+                            >
+                                Back
+                            </button>
+                            <button
+                                onClick={submitReject}
+                                disabled={!rejectRemarks.trim() || actionLoading}
+                                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                                Reject return
                             </button>
                         </div>
                     </div>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
 import { getErrorMessage } from "@/lib/getErrorMessage";
 import VariantImageUpload from "@/components/admin/products/VariantImagesUpload";
+import VariantEditor, { type EditableVariant } from "@/components/admin/products/VariantEditor";
 import {
     Package2,
     IndianRupee,
@@ -14,16 +15,10 @@ import {
     AlertCircle,
     ImagePlus,
     Sparkles,
+    Pencil,
 } from "lucide-react";
 
-interface Variant {
-    _id: string;
-    variantSku: string;
-    weight: { value: number; unit: string };
-    finalPrice: number;
-    stock: number;
-    status: "ACTIVE" | "INACTIVE";
-}
+type Variant = EditableVariant;
 
 interface Props {
     productId: string;
@@ -50,6 +45,8 @@ export default function StepAddVariants({
     const [loading, setLoading] = useState(false);
     const [fetchingVariants, setFetchingVariants] = useState(false);
     const [deletingId, setDeletingId] = useState<string | null>(null);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [togglingId, setTogglingId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
@@ -169,8 +166,27 @@ export default function StepAddVariants({
         }
     };
 
+    const toggleVariant = async (variant: Variant) => {
+        try {
+            setTogglingId(variant._id);
+            setError(null);
+            await api.put(`/admin/products/${productId}/variants/${variant._id}/toggle`);
+            await fetchVariants();
+            setSuccess(
+                variant.status === "ACTIVE"
+                    ? `${variant.variantSku} hidden from the shop.`
+                    : `${variant.variantSku} is available again.`
+            );
+            setTimeout(() => setSuccess(null), 2500);
+        } catch (err) {
+            setError(getErrorMessage(err));
+        } finally {
+            setTogglingId(null);
+        }
+    };
+
     const deleteVariant = async (variantId: string) => {
-        const confirmed = window.confirm("Delete this variant?");
+        const confirmed = window.confirm("Delete this variant permanently? To stop selling it for now, use \"Hide from shop\" instead.");
         if (!confirmed) return;
 
         try {
@@ -579,8 +595,25 @@ export default function StepAddVariants({
                                                             : "bg-gray-200 text-gray-600"
                                                             }`}
                                                     >
-                                                        {v.status}
+                                                        {v.status === "ACTIVE" ? "On sale" : "Hidden"}
                                                     </span>
+                                                </div>
+
+                                                <div className="mt-3 flex flex-wrap gap-2">
+                                                    <button
+                                                        onClick={() => setEditingId(editingId === v._id ? null : v._id)}
+                                                        className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
+                                                    >
+                                                        <Pencil className="h-3 w-3" />
+                                                        {editingId === v._id ? "Close" : "Edit price & stock"}
+                                                    </button>
+                                                    <button
+                                                        onClick={() => toggleVariant(v)}
+                                                        disabled={togglingId === v._id}
+                                                        className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+                                                    >
+                                                        {togglingId === v._id ? "Saving…" : v.status === "ACTIVE" ? "Hide from shop" : "Put on sale"}
+                                                    </button>
                                                 </div>
                                             </div>
 
@@ -594,6 +627,20 @@ export default function StepAddVariants({
                                                 <Trash2 className="h-4 w-4" />
                                             </button>
                                         </div>
+
+                                        {editingId === v._id && (
+                                            <VariantEditor
+                                                productId={productId}
+                                                variant={v}
+                                                onCancel={() => setEditingId(null)}
+                                                onSaved={async () => {
+                                                    setEditingId(null);
+                                                    await fetchVariants();
+                                                    setSuccess(`${v.variantSku} updated.`);
+                                                    setTimeout(() => setSuccess(null), 2500);
+                                                }}
+                                            />
+                                        )}
                                     </div>
                                 ))}
                             </div>

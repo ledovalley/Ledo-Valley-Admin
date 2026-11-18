@@ -17,6 +17,7 @@ export type OrderStatus =
 export const STATUS_LABEL: Record<string, string> = {
   PLACED: "New order",
   PAYMENT_PENDING: "Awaiting payment",
+  PAYMENT_FAILED: "Payment failed",
   PAYMENT_SUCCESS: "Paid · to pack",
   READY_TO_SHIP: "Pickup booked",
   SHIPPED: "Shipped",
@@ -24,6 +25,7 @@ export const STATUS_LABEL: Record<string, string> = {
   CANCELLED: "Cancelled",
   RETURN_REQUESTED: "Return requested",
   RETURN_APPROVED: "Return approved",
+  RETURN_REJECTED: "Return rejected",
   REFUNDED: "Refunded",
 };
 
@@ -31,6 +33,7 @@ export const PAYMENT_LABEL: Record<string, string> = {
   SUCCESS: "Paid",
   PENDING: "Payment pending",
   FAILED: "Payment failed",
+  REFUND_PENDING: "Refund pending",
   REFUNDED: "Refunded",
 };
 
@@ -70,6 +73,8 @@ export function paymentBadgeClass(status: string) {
   switch (status) {
     case "SUCCESS":
       return "bg-green-50 text-green-700 ring-green-200";
+    case "REFUND_PENDING":
+      return "bg-red-50 text-red-700 ring-red-200";
     case "FAILED":
       return "bg-red-50 text-red-700 ring-red-200";
     case "REFUNDED":
@@ -165,6 +170,8 @@ export interface OrderTab {
   label: string;
   /** Backend status filter; "" means every status */
   status: string;
+  /** Backend payment-status filter, if the tab needs one */
+  paymentStatus?: string;
   /** Whether to show a live count on the tab */
   counted: boolean;
   empty: string;
@@ -175,6 +182,7 @@ export const ORDER_TABS: OrderTab[] = [
   { key: "to-ship", label: "Awaiting pickup", status: "READY_TO_SHIP", counted: true, empty: "No orders waiting for courier pickup." },
   { key: "shipped", label: "Shipped", status: "SHIPPED", counted: true, empty: "No orders in transit." },
   { key: "returns", label: "Return requests", status: "RETURN_REQUESTED", counted: true, empty: "No return requests." },
+  { key: "refunds", label: "Refunds to process", status: "CANCELLED", paymentStatus: "REFUND_PENDING", counted: true, empty: "No refunds waiting. Customer-cancelled paid orders appear here." },
   { key: "delivered", label: "Delivered", status: "DELIVERED", counted: false, empty: "No delivered orders match." },
   { key: "cancelled", label: "Cancelled", status: "CANCELLED", counted: false, empty: "No cancelled orders match." },
   { key: "all", label: "All orders", status: "", counted: false, empty: "No orders match these filters." },

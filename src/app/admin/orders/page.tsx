@@ -93,7 +93,7 @@ export default function OrdersPage() {
         () => ({
             search,
             status: statusParam,
-            paymentStatus: tab.key === "all" ? paymentStatus : "",
+            paymentStatus: tab.paymentStatus ?? (tab.key === "all" ? paymentStatus : ""),
             startDate,
             endDate,
         }),
@@ -126,7 +126,7 @@ export default function OrdersPage() {
             counted.map(async (t) => {
                 try {
                     const res = await api.get("/admin/orders", {
-                        params: { status: t.status, page: 1, limit: 1 },
+                        params: { status: t.status, paymentStatus: t.paymentStatus ?? "", page: 1, limit: 1 },
                     });
                     const d = res.data;
                     // With limit=1, "pages" equals the number of matching orders.
@@ -654,6 +654,13 @@ export default function OrdersPage() {
                                                         >
                                                             {isBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                                                             {step.label}
+                                                        </button>
+                                                    ) : order.payment.status === "REFUND_PENDING" ? (
+                                                        <button
+                                                            onClick={() => router.push(`/admin/orders/${order._id}`)}
+                                                            className="min-w-32 rounded-xl bg-red-600 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-red-700"
+                                                        >
+                                                            Refund
                                                         </button>
                                                     ) : order.status === "RETURN_REQUESTED" ? (
                                                         <button
