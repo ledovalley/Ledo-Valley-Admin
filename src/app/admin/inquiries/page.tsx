@@ -371,7 +371,7 @@ export default function AdminContactPage() {
                                         </p>
                                     </div>
 
-                                    <div className="max-h-90 overflow-y-auto px-5 py-5 text-sm leading-7 text-text-primary">
+                                    <div className="max-h-90 overflow-y-auto whitespace-pre-wrap break-words px-5 py-5 text-sm leading-7 text-text-primary">
                                         {selected.message}
                                     </div>
                                 </div>
