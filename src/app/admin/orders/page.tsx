@@ -20,6 +20,7 @@ import {
 } from "@/lib/orderFlow";
 import { openPrintWindow, writePackingSlips, type SlipOrder } from "@/lib/packingSlip";
 import { downloadBulkInvoices, downloadInvoice } from "@/lib/invoice";
+import ExportOrdersMenu from "@/components/admin/orders/ExportOrdersMenu";
 import {
     ChevronLeft,
     ChevronRight,
@@ -367,6 +368,14 @@ export default function OrdersPage() {
                         <Download className="h-4 w-4" />
                         Invoices for this view
                     </button>
+                    <ExportOrdersMenu
+                        viewParams={filterParams}
+                        startDate={startDate}
+                        endDate={endDate}
+                        disabled={busy}
+                        onDone={success}
+                        onError={toastError}
+                    />
                     <button
                         onClick={refreshAll}
                         disabled={busy}
