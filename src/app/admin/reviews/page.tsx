@@ -15,7 +15,7 @@ interface Review {
   rating: number;
   review: string;
   isTestimonial: boolean;
-  status: "VISIBLE" | "HIDDEN";
+  status: "PENDING" | "VISIBLE" | "HIDDEN";
   createdAt: string;
 }
 
@@ -27,7 +27,7 @@ export default function AdminReviewsPage() {
   const [search, setSearch] = useState("");
   const [rating, setRating] = useState("");
   const [testimonial, setTestimonial] = useState("");
-  const [activeTab, setActiveTab] = useState<"PENDING" | "VISIBLE">("PENDING");
+  const [activeTab, setActiveTab] = useState<"PENDING" | "VISIBLE" | "HIDDEN">("PENDING");
 
   /* ================= FETCH REVIEWS ================= */
 
@@ -91,11 +91,11 @@ export default function AdminReviewsPage() {
   /* ================= RENDER ================= */
 
   return (
-    <div className="min-h-screen p-8 space-y-8">
+    <div className="min-h-screen p-0 sm:p-4 lg:p-8 space-y-6 sm:space-y-8">
 
       {/* HEADER */}
       <div>
-        <h1 className="text-3xl font-semibold">Reviews Management</h1>
+        <h1 className="text-2xl sm:text-3xl font-semibold">Reviews Management</h1>
         <p className="text-gray-500 mt-1">
           Moderate product reviews & testimonials
         </p>
@@ -123,10 +123,20 @@ export default function AdminReviewsPage() {
         >
           Approved Reviews
         </button>
+        <button
+          className={`py-3 px-6 text-sm font-medium border-b-2 ${
+            activeTab === "HIDDEN"
+              ? "border-amber-600 text-amber-600"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+          onClick={() => setActiveTab("HIDDEN")}
+        >
+          Hidden
+        </button>
       </div>
 
       {/* FILTERS */}
-      <div className="bg-bg-surface/80 rounded-2xl border shadow-sm p-6 grid grid-cols-4 gap-4">
+      <div className="bg-bg-surface/80 rounded-2xl border shadow-sm p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
         <div>
           <label className="text-xs text-gray-500 mb-1 block">Search</label>
@@ -184,8 +194,8 @@ export default function AdminReviewsPage() {
       </div>
 
       {/* TABLE */}
-      <div className="bg-bg-surface/80 rounded-2xl border shadow-sm overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-bg-surface/80 rounded-2xl border shadow-sm overflow-x-auto">
+        <table className="w-full min-w-[760px] text-sm">
           <thead className="bg-border-muted/20 text-xs uppercase text-gray-600">
             <tr>
               <th className="px-6 py-4 text-left">Customer</th>
@@ -225,7 +235,7 @@ export default function AdminReviewsPage() {
                     ⭐ {review.rating}
                   </td>
 
-                  <td className="px-6 py-4 max-w-xs truncate">
+                  <td className="px-6 py-4 max-w-xs truncate" title={review.review}>
                     {review.review}
                   </td>
 
@@ -250,8 +260,30 @@ export default function AdminReviewsPage() {
                           Reject
                         </button>
                       </>
+                    ) : activeTab === "HIDDEN" ? (
+                      <>
+                        <button
+                          onClick={() => updateStatus(review.productId, review._id, "VISIBLE")}
+                          className="px-3 py-1 cursor-pointer text-xs bg-green-100 hover:bg-green-200 text-green-700 rounded font-medium"
+                        >
+                          Show again
+                        </button>
+                        <button
+                          onClick={() => deleteReview(review.productId, review._id)}
+                          className="px-3 py-1 cursor-pointer text-xs bg-red-100 hover:bg-red-200 text-red-700 rounded font-medium"
+                        >
+                          Delete
+                        </button>
+                      </>
                     ) : (
                       <>
+                        <button
+                          onClick={() => updateStatus(review.productId, review._id, "HIDDEN")}
+                          title="Remove from the website without deleting (you can show it again from the Hidden tab)"
+                          className="px-3 py-1 cursor-pointer text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded font-medium"
+                        >
+                          Hide
+                        </button>
                         <button
                           onClick={() => toggleTestimonial(review.productId, review._id)}
                           className={`px-3 py-1 text-xs rounded cursor-pointer ${

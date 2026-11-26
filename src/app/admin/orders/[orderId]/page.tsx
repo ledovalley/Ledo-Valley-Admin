@@ -21,7 +21,12 @@ import {
     trackingUrl,
 } from "@/lib/orderFlow";
 import { addressLines, openPrintWindow, writePackingSlips } from "@/lib/packingSlip";
-import { downloadInvoice } from "@/lib/invoice";
+import { downloadInvoice, downloadCreditNote } from "@/lib/invoice";
+import { openShiprocketPdf } from "@/lib/shiprocketPrint";
+import OrderNotes, { type OrderNote } from "@/components/admin/orders/OrderNotes";
+import OrderTimeline, { type HistoryEvent } from "@/components/admin/orders/OrderTimeline";
+import ContactCustomer from "@/components/admin/orders/ContactCustomer";
+import MissedPickup from "@/components/admin/orders/MissedPickup";
 import {
     ArrowLeft,
     BadgeIndianRupee,
@@ -37,6 +42,8 @@ import {
     RotateCcw,
     Truck,
     User,
+    Pencil,
+    MessageCircle,
 } from "lucide-react";
 
 interface OrderItem {
@@ -74,6 +81,16 @@ interface Order {
     items: OrderItem[];
     itemsTotal: number;
     gstAmount: number;
+    tax?: {
+        goodsTaxable?: number;
+        goodsGst?: number;
+        shippingGst?: number;
+        totalTaxable?: number;
+        totalGst?: number;
+        intraState?: boolean;
+    };
+    invoice?: { number?: string; date?: string };
+    creditNotes?: { number: string; date: string; amount: number; gst: number; reason?: string }[];
     shippingAmount: number;
     codCharge?: number;
     discountAmount: number;
@@ -83,12 +100,20 @@ interface Order {
         method?: string;
         failureReason?: string;
         lastCheckedAt?: string;
+        paidAt?: string;
     };
     attentionNote?: string;
+    notes?: OrderNote[];
+    history?: HistoryEvent[];
     returnInfo?: {
+        requestedAt?: string;
+        approvedAt?: string;
+        rejectedAt?: string;
         status: string;
         reason?: string;
         rejectionReason?: string;
+        refundAmount?: number;
+        refundedAt?: string;
     };
     shipping?: {
         shiprocketOrderId?: string;
@@ -96,10 +121,22 @@ interface Order {
         awbCode?: string;
         courierName?: string;
         status?: string;
+        pickupScheduledAt?: string;
         shippedAt?: string;
         deliveredAt?: string;
+        manual?: boolean;
+        trackingUrl?: string;
+        labelPrintedAt?: string;
+        pickupDate?: string;
     };
     cancellationReason?: string;
+    rto?: {
+        startedAt?: string;
+        backAt?: string;
+        closedAt?: string;
+        restocked?: boolean;
+        refundAmount?: number;
+    };
 }
 
 interface ConfirmState {
@@ -110,6 +147,12 @@ interface ConfirmState {
     request: () => Promise<unknown>;
     successMessage: string;
 }
+
+const OTHER_COURIER = "Other courier";
+const OWN_DELIVERY = "Delivered by us (by hand)";
+const COURIER_CHOICES = ["India Post – Speed Post", "India Post – Registered Parcel", OTHER_COURIER, OWN_DELIVERY];
+// Once the Shiprocket courier has collected the parcel it can't be sent another way.
+const ORDER_PICKED_UP = ["PICKED_UP", "SHIPPED", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED"];
 
 function Card({
     title,
@@ -154,6 +197,27 @@ export default function OrderDetailsPage() {
     const [checkingPayment, setCheckingPayment] = useState(false);
     const [rejectOpen, setRejectOpen] = useState(false);
     const [rejectRemarks, setRejectRemarks] = useState("");
+    const [qualityOpen, setQualityOpen] = useState(false);
+    const [qualityReason, setQualityReason] = useState("");
+    const [qualityAmount, setQualityAmount] = useState("");
+    const [shipOpen, setShipOpen] = useState(false);
+    const [chooseOpen, setChooseOpen] = useState(false);
+    const [rtoOpen, setRtoOpen] = useState(false);
+    const [editShipOpen, setEditShipOpen] = useState(false);
+    const [editCourier, setEditCourier] = useState("");
+    const [editNumber, setEditNumber] = useState("");
+    const [editLink, setEditLink] = useState("");
+    const [editNotify, setEditNotify] = useState(true);
+    const [rtoAmount, setRtoAmount] = useState("");
+    const [rtoRestock, setRtoRestock] = useState(true);
+    const [rtoNote, setRtoNote] = useState("");
+    const [booking, setBooking] = useState(false);
+    const [shipCourier, setShipCourier] = useState(COURIER_CHOICES[0]);
+    const [shipOtherCourier, setShipOtherCourier] = useState("");
+    const [shipNumber, setShipNumber] = useState("");
+    const [shipLink, setShipLink] = useState("");
+    const [printing, setPrinting] = useState<"labels" | "manifest" | null>(null);
+    const [clearingNote, setClearingNote] = useState(false);
 
     const fetchOrder = useCallback(async () => {
         try {
@@ -241,6 +305,164 @@ export default function OrderDetailsPage() {
         }
     };
 
+    const closeQuality = () => {
+        setQualityOpen(false);
+        setQualityReason("");
+        setQualityAmount("");
+    };
+
+    const submitQualityRefund = async () => {
+        if (!order || !qualityReason.trim()) return;
+        try {
+            setActionLoading(true);
+            const res = await api.patch(`/admin/orders/${order._id}/quality-refund`, {
+                reason: qualityReason.trim(),
+                amount: qualityAmount.trim() === "" ? undefined : Number(qualityAmount),
+            });
+            success(`${res.data?.message || "Refunded"}. The customer has been emailed.`);
+            closeQuality();
+            await fetchOrder();
+        } catch (err) {
+            showError(getErrorMessage(err));
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const closeShip = () => {
+        setShipOpen(false);
+        setShipCourier(COURIER_CHOICES[0]);
+        setShipOtherCourier("");
+        setShipNumber("");
+        setShipLink("");
+    };
+
+    const shipCourierName = shipCourier === OTHER_COURIER ? shipOtherCourier.trim() : shipCourier;
+
+    const ownDelivery = shipCourier === OWN_DELIVERY;
+
+    const openEditShipping = () => {
+        if (!order) return;
+        setEditCourier(order.shipping?.courierName || "");
+        setEditNumber(order.shipping?.awbCode || "");
+        setEditLink(order.shipping?.trackingUrl || "");
+        setEditNotify(order.status === "SHIPPED");
+        setEditShipOpen(true);
+    };
+
+    const saveEditShipping = async () => {
+        if (!order || !editCourier.trim()) return;
+        try {
+            setActionLoading(true);
+            const res = await api.patch(`/admin/orders/${order._id}/shipping-details`, {
+                courierName: editCourier.trim(),
+                trackingNumber: editNumber.trim(),
+                trackingUrl: editLink.trim() || undefined,
+                notifyCustomer: editNotify,
+            });
+            success(res.data?.message || "Saved");
+            setEditShipOpen(false);
+            await fetchOrder();
+        } catch (err) {
+            showError(getErrorMessage(err));
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const openReturned = () => {
+        if (!order) return;
+        setRtoAmount(String(order.grandTotal));
+        setRtoRestock(true);
+        setRtoNote("");
+        setRtoOpen(true);
+    };
+
+    const submitReturned = async () => {
+        if (!order) return;
+        const prepaid = order.payment.method !== "COD" && order.payment.status === "SUCCESS";
+        try {
+            setActionLoading(true);
+            const res = await api.patch(`/admin/orders/${order._id}/returned-to-us`, {
+                refundAmount: prepaid ? Number(rtoAmount) : 0,
+                restock: rtoRestock,
+                note: rtoNote.trim() || undefined,
+            });
+            success(res.data?.message || "Marked as returned");
+            setRtoOpen(false);
+            await fetchOrder();
+        } catch (err) {
+            showError(getErrorMessage(err));
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const bookShiprocketPickup = async () => {
+        if (!order) return;
+        try {
+            setBooking(true);
+            await api.patch(`/admin/orders/${order._id}/status`, { status: "READY_TO_SHIP" });
+            success("Shiprocket pickup booked.");
+            setChooseOpen(false);
+            await fetchOrder();
+        } catch (err) {
+            showError(getErrorMessage(err));
+            setChooseOpen(false);
+            await fetchOrder();
+        } finally {
+            setBooking(false);
+        }
+    };
+
+    const submitShip = async () => {
+        if (!order || !shipCourierName) return;
+        try {
+            setActionLoading(true);
+            await api.patch(`/admin/orders/${order._id}/ship-manually`, {
+                courierName: ownDelivery ? "Delivered by Ledo Valley" : shipCourierName,
+                trackingNumber: ownDelivery ? "" : shipNumber.trim(),
+                trackingUrl: ownDelivery ? undefined : shipLink.trim() || undefined,
+            });
+            success(`Order #${order.orderNumber} marked as shipped by ${shipCourierName}. The customer has been emailed.`);
+            closeShip();
+            await fetchOrder();
+        } catch (err) {
+            showError(getErrorMessage(err));
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const printShiprocket = async (kind: "labels" | "manifest") => {
+        if (!order) return;
+        try {
+            setPrinting(kind);
+            await openShiprocketPdf(kind, [order._id]);
+            if (kind === "labels") await fetchOrder();
+        } catch (err) {
+            showError(getErrorMessage(err));
+        } finally {
+            setPrinting(null);
+        }
+    };
+
+    const markAttentionHandled = async () => {
+        if (!order) return;
+        const comment = window.prompt("Mark this as handled? Add a short note of what you did (optional):", "");
+        if (comment === null) return;
+        try {
+            setClearingNote(true);
+            await api.patch(`/admin/orders/${order._id}/attention-handled`, { comment });
+            success("Marked as handled");
+            await fetchOrder();
+        } catch (err) {
+            showError(getErrorMessage(err));
+        } finally {
+            setClearingNote(false);
+        }
+    };
+
     const handleDownloadInvoice = async () => {
         if (!order) return;
         try {
@@ -304,7 +526,11 @@ export default function OrderDetailsPage() {
         return <div className="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">Order not found</div>;
     }
 
-    const step = nextStep(order);
+    // The courier is bringing the parcel back (customer didn't accept it).
+    const rtoUnderway =
+        ["SHIPPED", "READY_TO_SHIP"].includes(order.status) &&
+        (!!order.rto?.startedAt || (order.shipping?.status || "").startsWith("RTO"));
+    const step = rtoUnderway ? null : nextStep(order);
     const progress = progressIndex(order);
     const cancelled = order.status === "CANCELLED";
     const addr = order.shippingAddress;
@@ -315,6 +541,38 @@ export default function OrderDetailsPage() {
         order.payment.method !== "COD" && ["PENDING", "FAILED"].includes(order.payment.status);
 
     const secondaryActions: { label: string; className: string; onClick: () => void }[] = [];
+    if (["DELIVERED", "RETURN_REJECTED"].includes(order.status) && order.payment.status === "SUCCESS") {
+        secondaryActions.push({
+            label: "Quality issue refund",
+            className: "border border-red-200 bg-white text-red-700 hover:bg-red-50",
+            onClick: () => setQualityOpen(true),
+        });
+    }
+
+    const canShipManually =
+        (["PAYMENT_SUCCESS", "READY_TO_SHIP"].includes(order.status) ||
+            (order.status === "PLACED" && order.payment.method === "COD")) &&
+        (order.payment.status === "SUCCESS" || order.payment.method === "COD") &&
+        !ORDER_PICKED_UP.includes(order.shipping?.status || "");
+    // Before pickup is booked, "Ship this order" asks how; after, this lets you switch.
+    const choosesHow = step?.to === "READY_TO_SHIP";
+    const noShiprocketCourier = /No Shiprocket courier delivers/i.test(order.attentionNote || "");
+    if (canShipManually && !choosesHow) {
+        secondaryActions.push({
+            label: "Ship another way instead",
+            className: "border border-black/10 bg-white text-text-primary hover:bg-black/5",
+            onClick: () => setShipOpen(true),
+        });
+    }
+    if (order.status === "SHIPPED" || rtoUnderway) {
+        secondaryActions.push({
+            label: "Returned to us",
+            className: rtoUnderway
+                ? "bg-rose-600 text-white hover:bg-rose-700"
+                : "border border-black/10 bg-white text-text-primary hover:bg-black/5",
+            onClick: openReturned,
+        });
+    }
     if (refundPending) {
         secondaryActions.push({
             label: `Refund ${formatINR(order.grandTotal)} now`,
@@ -438,9 +696,19 @@ export default function OrderDetailsPage() {
                 </section>
 
                 {order.attentionNote && (
-                    <section role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm">
-                        <span className="font-semibold">Needs attention: </span>
-                        {order.attentionNote}
+                    <section role="alert" className="flex flex-col gap-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                            <span className="font-semibold">Needs attention: </span>
+                            {order.attentionNote}
+                        </div>
+                        <button
+                            onClick={markAttentionHandled}
+                            disabled={clearingNote}
+                            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-60"
+                        >
+                            {clearingNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                            Mark handled
+                        </button>
                     </section>
                 )}
 
@@ -518,7 +786,11 @@ export default function OrderDetailsPage() {
 
                     <div className="mt-6 flex flex-col gap-4 border-t border-black/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
                         <div className="text-sm text-text-secondary">
-                            {step
+                            {rtoUnderway
+                                ? <>The customer didn&apos;t accept this parcel and it&apos;s coming back{order.rto?.backAt ? " (it has reached you)" : ""}. When you have it, click <span className="font-medium text-text-primary">Returned to us</span>.</>
+                                : choosesHow
+                                ? <>Next: <span className="font-medium text-text-primary">pack it, then choose how to send it: a Shiprocket pickup, or another way (India Post, another courier, by hand).</span></>
+                                : step
                                 ? <>Next: <span className="font-medium text-text-primary">{step.hint}</span></>
                                 : refundPending
                                     ? "Refund the customer for this cancelled order."
@@ -548,7 +820,15 @@ export default function OrderDetailsPage() {
                                     {a.label}
                                 </button>
                             ))}
-                            {step && (
+                            {step && choosesHow && (
+                                <button
+                                    onClick={() => setChooseOpen(true)}
+                                    className="rounded-xl bg-brand-primary px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-primary/90"
+                                >
+                                    Ship this order
+                                </button>
+                            )}
+                            {step && !choosesHow && (
                                 <button
                                     onClick={() =>
                                         setConfirm({
@@ -623,9 +903,61 @@ export default function OrderDetailsPage() {
                                 </div>
                                 <div className="text-right text-xs text-text-secondary">
                                     Includes GST of {formatINR(order.gstAmount)}
+                                    {order.tax?.totalGst !== undefined &&
+                                        (order.tax.intraState
+                                            ? ` (CGST ${formatINR(order.tax.totalGst / 2)} + SGST ${formatINR(order.tax.totalGst / 2)})`
+                                            : " (IGST)")}
                                 </div>
                             </div>
                         </Card>
+
+                        {(order.invoice?.number || (order.creditNotes?.length ?? 0) > 0) && (
+                            <Card title="GST invoice" icon={<BadgeIndianRupee className="h-4 w-4" />}>
+                                <dl className="space-y-2 text-sm">
+                                    {order.invoice?.number && (
+                                        <div className="flex justify-between gap-3">
+                                            <dt className="text-text-secondary">Invoice</dt>
+                                            <dd className="font-mono font-medium text-text-primary">
+                                                {order.invoice.number}
+                                                {order.invoice.date && (
+                                                    <span className="ml-2 font-sans text-xs font-normal text-text-secondary">
+                                                        {new Date(order.invoice.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                                    </span>
+                                                )}
+                                            </dd>
+                                        </div>
+                                    )}
+                                </dl>
+                                {(order.creditNotes?.length ?? 0) > 0 && (
+                                    <div className="mt-4 border-t border-black/10 pt-3">
+                                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">Credit notes</p>
+                                        <ul className="space-y-2">
+                                            {order.creditNotes!.map((note, i) => (
+                                                <li key={note.number} className="flex items-center justify-between gap-3 text-sm">
+                                                    <span>
+                                                        <span className="font-mono">{note.number}</span>
+                                                        <span className="ml-2 text-text-secondary">{formatINR(note.amount)}</span>
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={async () => {
+                                                            try {
+                                                                await downloadCreditNote(order._id, i, note.number);
+                                                            } catch (err) {
+                                                                showError(getErrorMessage(err));
+                                                            }
+                                                        }}
+                                                        className="text-sm font-medium text-brand-primary hover:underline"
+                                                    >
+                                                        Download
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </Card>
+                        )}
                     </div>
 
                     {/* Right */}
@@ -657,18 +989,32 @@ export default function OrderDetailsPage() {
                             </div>
                         </Card>
 
-                        {order.shipping?.shipmentId && (
-                            <Card title="Shipment (Shiprocket)" icon={<Truck className="h-4 w-4" />}>
+                        {(order.shipping?.shipmentId || order.shipping?.manual) && (
+                            <Card
+                                title={order.shipping.manual ? `Shipment (${order.shipping.courierName || "own courier"})` : "Shipment (Shiprocket)"}
+                                icon={<Truck className="h-4 w-4" />}
+                                action={
+                                    order.shipping.manual && ["SHIPPED", "DELIVERED"].includes(order.status) ? (
+                                        <button
+                                            onClick={openEditShipping}
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-2.5 py-1.5 text-xs font-medium text-text-primary transition hover:bg-black/5"
+                                        >
+                                            <Pencil className="h-3.5 w-3.5" />
+                                            Edit
+                                        </button>
+                                    ) : undefined
+                                }
+                            >
                                 <dl className="space-y-2 text-sm">
                                     <div className="flex justify-between gap-3">
                                         <dt className="text-text-secondary">Courier</dt>
                                         <dd className="font-medium text-text-primary">{order.shipping.courierName || "Not assigned yet"}</dd>
                                     </div>
                                     <div className="flex justify-between gap-3">
-                                        <dt className="text-text-secondary">AWB</dt>
-                                        <dd className="font-mono font-medium text-text-primary">{order.shipping.awbCode || "Not assigned yet"}</dd>
+                                        <dt className="text-text-secondary">{order.shipping.manual ? "Tracking no." : "AWB"}</dt>
+                                        <dd className="font-mono font-medium text-text-primary">{order.shipping.awbCode || (order.shipping.manual ? "None" : "Not assigned yet")}</dd>
                                     </div>
-                                    {order.shipping.status && (
+                                    {order.shipping.status && !order.shipping.manual && (
                                         <div className="flex justify-between gap-3">
                                             <dt className="text-text-secondary">Shiprocket status</dt>
                                             <dd className="font-medium text-text-primary">{order.shipping.status.replaceAll("_", " ").toLowerCase()}</dd>
@@ -687,7 +1033,18 @@ export default function OrderDetailsPage() {
                                         </div>
                                     )}
                                 </dl>
-                                {order.shipping.awbCode ? (
+                                {order.shipping.manual ? (
+                                    order.shipping.trackingUrl ? (
+                                        <a
+                                            href={order.shipping.trackingUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary hover:underline"
+                                        >
+                                            Open {order.shipping.courierName || "courier"} tracking ↗
+                                        </a>
+                                    ) : null
+                                ) : order.shipping.awbCode ? (
                                     <a
                                         href={trackingUrl(order.shipping.awbCode)}
                                         target="_blank"
@@ -701,6 +1058,48 @@ export default function OrderDetailsPage() {
                                         No AWB yet. Check the order in your Shiprocket dashboard.
                                     </p>
                                 )}
+                                {!order.shipping.manual &&
+                                    order.shipping.awbCode &&
+                                    order.shipping.status !== "CANCELLED" &&
+                                    order.status !== "CANCELLED" && (
+                                        <div className="mt-4 border-t border-black/5 pt-4">
+                                            <div className="flex flex-wrap gap-2">
+                                                <button
+                                                    onClick={() => printShiprocket("labels")}
+                                                    disabled={!!printing}
+                                                    className="inline-flex items-center gap-1.5 rounded-xl bg-bg-dark px-3 py-2 text-xs font-semibold text-white transition hover:bg-bg-dark/90 disabled:opacity-60"
+                                                >
+                                                    {printing === "labels" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+                                                    Print shipping label
+                                                </button>
+                                                <button
+                                                    onClick={() => printShiprocket("manifest")}
+                                                    disabled={!!printing}
+                                                    className="inline-flex items-center gap-1.5 rounded-xl border border-black/10 px-3 py-2 text-xs font-semibold text-text-primary transition hover:bg-black/5 disabled:opacity-60"
+                                                >
+                                                    {printing === "manifest" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                                                    Manifest
+                                                </button>
+                                            </div>
+                                            <p className="mt-2 text-xs text-text-secondary">
+                                                {order.shipping.labelPrintedAt
+                                                    ? `Label last printed ${formatDate(order.shipping.labelPrintedAt, true)}.`
+                                                    : "Label not printed yet."}{" "}
+                                                Stick the label on the parcel; the courier signs the manifest at pickup.
+                                            </p>
+                                        </div>
+                                    )}
+                                {order.status === "READY_TO_SHIP" &&
+                                    !order.shipping.manual &&
+                                    order.shipping.status !== "CANCELLED" &&
+                                    !(order.shipping.status || "").startsWith("RTO") && (
+                                        <>
+                                            {order.shipping.pickupDate && (
+                                                <p className="mt-3 text-xs text-text-secondary">Pickup requested for {formatDate(order.shipping.pickupDate)}.</p>
+                                            )}
+                                            <MissedPickup orderId={order._id} orderNumber={order.orderNumber} onDone={fetchOrder} />
+                                        </>
+                                    )}
                             </Card>
                         )}
 
@@ -720,19 +1119,73 @@ export default function OrderDetailsPage() {
                             </div>
                         </Card>
 
-                        {order.returnInfo?.status && (
+                        <Card title="Contact customer" icon={<MessageCircle className="h-4 w-4" />}>
+                            <ContactCustomer
+                                key={order.status}
+                                phone={shipPhone}
+                                name={addr.name || order.customerSnapshot.name}
+                                orderNumber={order.orderNumber}
+                                status={order.status}
+                                courierName={order.shipping?.courierName}
+                                trackingNumber={order.shipping?.awbCode}
+                                trackingUrl={order.shipping?.trackingUrl || undefined}
+                            />
+                        </Card>
+
+                        {order.returnInfo?.status && order.returnInfo.status !== "NONE" && (
                             <Card title="Return" icon={<RotateCcw className="h-4 w-4" />}>
                                 <span className="inline-flex rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-700">
                                     {order.returnInfo.status.replaceAll("_", " ").toLowerCase()}
                                 </span>
                                 {order.returnInfo.reason && (
-                                    <p className="mt-3 text-sm text-text-primary">Customer&apos;s reason: {order.returnInfo.reason}</p>
+                                    <p className="mt-3 text-sm text-text-primary">
+                                        {order.returnInfo.reason.startsWith("Quality issue:") ? order.returnInfo.reason : <>Customer&apos;s reason: {order.returnInfo.reason}</>}
+                                    </p>
+                                )}
+                                {order.returnInfo.refundAmount !== undefined && order.returnInfo.status === "COMPLETED" && (
+                                    <p className="mt-2 text-sm text-text-secondary">
+                                        Refunded {formatINR(order.returnInfo.refundAmount)}
+                                        {order.returnInfo.refundAmount < order.grandTotal && ` of ${formatINR(order.grandTotal)}`}
+                                    </p>
                                 )}
                                 {order.returnInfo.rejectionReason && (
                                     <p className="mt-2 text-sm text-text-secondary">Rejected because: {order.returnInfo.rejectionReason}</p>
                                 )}
                             </Card>
                         )}
+
+                        {order.status === "RETURNED" && order.rto && (
+                            <Card title="Returned to us" icon={<RotateCcw className="h-4 w-4" />}>
+                                <dl className="space-y-2 text-sm">
+                                    {order.rto.backAt && (
+                                        <div className="flex justify-between gap-3">
+                                            <dt className="text-text-secondary">Back with us</dt>
+                                            <dd className="text-text-primary">{formatDate(order.rto.backAt, true)}</dd>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-text-secondary">Stock</dt>
+                                        <dd className="text-text-primary">{order.rto.restocked ? "Put back" : "Not put back"}</dd>
+                                    </div>
+                                    {order.payment.method !== "COD" && (
+                                        <div className="flex justify-between gap-3">
+                                            <dt className="text-text-secondary">Refund</dt>
+                                            <dd className="text-text-primary">
+                                                {order.rto.refundAmount ? `${formatINR(order.rto.refundAmount)} of ${formatINR(order.grandTotal)}` : "None"}
+                                            </dd>
+                                        </div>
+                                    )}
+                                </dl>
+                            </Card>
+                        )}
+
+                        <OrderNotes
+                            orderId={order._id}
+                            notes={order.notes || []}
+                            onChange={(notes) => setOrder((prev) => (prev ? { ...prev, notes } : prev))}
+                        />
+
+                        <OrderTimeline order={order} />
                     </div>
                 </div>
             </div>
@@ -752,8 +1205,8 @@ export default function OrderDetailsPage() {
             />
 
             {cancelOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-                    <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4">
+                    <div role="dialog" aria-modal="true" className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
                         <h3 className="text-lg font-semibold text-text-primary">Cancel order #{order.orderNumber}?</h3>
                         <p className="mt-1 text-sm text-text-secondary">
                             This can&apos;t be undone.
@@ -793,9 +1246,423 @@ export default function OrderDetailsPage() {
                 </div>
             )}
 
+            {qualityOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4">
+                    <div role="dialog" aria-modal="true" aria-labelledby="quality-title" className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
+                        <h3 id="quality-title" className="text-lg font-semibold text-text-primary">Quality issue refund · #{order.orderNumber}</h3>
+                        <p className="mt-1 text-sm text-text-secondary">
+                            Use this after you&apos;ve checked the customer&apos;s email and photos. The money goes back through PayU straight away
+                            and the customer is emailed. Stock is not added back.
+                        </p>
+
+                        <label htmlFor="quality-reason" className="mb-2 mt-4 block text-sm font-medium text-text-primary">What was wrong</label>
+                        <textarea
+                            id="quality-reason"
+                            autoFocus
+                            rows={3}
+                            value={qualityReason}
+                            onChange={(e) => setQualityReason(e.target.value)}
+                            placeholder="e.g. Pouch torn, tea damp — photos received by email on 23 Nov"
+                            className="w-full resize-none rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+
+                        <label htmlFor="quality-amount" className="mb-2 mt-4 block text-sm font-medium text-text-primary">
+                            Refund amount <span className="font-normal text-text-secondary">(order total {formatINR(order.grandTotal)})</span>
+                        </label>
+                        <input
+                            id="quality-amount"
+                            type="number"
+                            inputMode="decimal"
+                            min={1}
+                            max={order.grandTotal}
+                            step="0.01"
+                            value={qualityAmount}
+                            onChange={(e) => setQualityAmount(e.target.value)}
+                            placeholder={`Leave empty for the full ${formatINR(order.grandTotal)}`}
+                            className="w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+                        <p className="mt-1.5 text-xs text-text-secondary">For part of an order (e.g. one damaged pack), enter just that amount.</p>
+
+                        <div className="mt-5 flex justify-end gap-3">
+                            <button
+                                onClick={closeQuality}
+                                disabled={actionLoading}
+                                className="rounded-xl px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-black/5 disabled:opacity-50"
+                            >
+                                Back
+                            </button>
+                            <button
+                                onClick={submitQualityRefund}
+                                disabled={
+                                    !qualityReason.trim() ||
+                                    actionLoading ||
+                                    (qualityAmount.trim() !== "" &&
+                                        (!(Number(qualityAmount) > 0) || Number(qualityAmount) > order.grandTotal))
+                                }
+                                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+                            >
+                                {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                                Refund {qualityAmount.trim() !== "" && Number(qualityAmount) > 0 ? formatINR(Number(qualityAmount)) : formatINR(order.grandTotal)}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {editShipOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4">
+                    <div role="dialog" aria-modal="true" aria-labelledby="edit-ship-title" className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
+                        <h3 id="edit-ship-title" className="text-lg font-semibold text-text-primary">Correct shipping details</h3>
+                        <p className="mt-1 text-sm text-text-secondary">
+                            Fix a wrong courier name or tracking number for #{order.orderNumber}. The old details are kept in the order history.
+                        </p>
+
+                        <label htmlFor="edit-courier" className="mb-2 mt-4 block text-sm font-medium text-text-primary">Courier</label>
+                        <input
+                            id="edit-courier"
+                            list="edit-courier-choices"
+                            value={editCourier}
+                            onChange={(e) => setEditCourier(e.target.value)}
+                            maxLength={60}
+                            className="w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+                        <datalist id="edit-courier-choices">
+                            {COURIER_CHOICES.filter((c) => c !== OTHER_COURIER && c !== OWN_DELIVERY).map((c) => (
+                                <option key={c} value={c} />
+                            ))}
+                            <option value="Delivered by Ledo Valley" />
+                        </datalist>
+
+                        <label htmlFor="edit-number" className="mb-2 mt-4 block text-sm font-medium text-text-primary">
+                            Tracking number <span className="font-normal text-text-secondary">(optional)</span>
+                        </label>
+                        <input
+                            id="edit-number"
+                            value={editNumber}
+                            onChange={(e) => setEditNumber(e.target.value.toUpperCase())}
+                            maxLength={40}
+                            className="w-full rounded-xl border border-black/10 p-3 font-mono text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+
+                        <label htmlFor="edit-link" className="mb-2 mt-4 block text-sm font-medium text-text-primary">
+                            Tracking link <span className="font-normal text-text-secondary">(optional)</span>
+                        </label>
+                        <input
+                            id="edit-link"
+                            type="url"
+                            value={editLink}
+                            onChange={(e) => setEditLink(e.target.value)}
+                            placeholder="https://"
+                            className="w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+                        {editLink.trim() && !/^https?:\/\//i.test(editLink.trim()) && (
+                            <p className="mt-1 text-xs text-red-600">The link must start with https://</p>
+                        )}
+
+                        {order.status === "SHIPPED" && (
+                            <label className="mt-4 flex items-start gap-2 text-sm text-text-primary">
+                                <input
+                                    type="checkbox"
+                                    checked={editNotify}
+                                    onChange={(e) => setEditNotify(e.target.checked)}
+                                    className="mt-0.5 h-4 w-4 rounded border-black/20"
+                                />
+                                <span>
+                                    Email the customer the corrected details
+                                    <span className="block text-xs text-text-secondary">Subject: “Updated delivery details”.</span>
+                                </span>
+                            </label>
+                        )}
+
+                        <div className="mt-5 flex justify-end gap-3">
+                            <button
+                                onClick={() => setEditShipOpen(false)}
+                                disabled={actionLoading}
+                                className="rounded-xl px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-black/5 disabled:opacity-50"
+                            >
+                                Back
+                            </button>
+                            <button
+                                onClick={saveEditShipping}
+                                disabled={!editCourier.trim() || (!!editLink.trim() && !/^https?:\/\//i.test(editLink.trim())) || actionLoading}
+                                className="inline-flex items-center gap-2 rounded-xl bg-bg-dark px-4 py-2 text-sm font-semibold text-white transition hover:bg-bg-dark/90 disabled:opacity-50"
+                            >
+                                {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {rtoOpen && (() => {
+                const prepaid = order.payment.method !== "COD" && order.payment.status === "SUCCESS";
+                const amount = Number(rtoAmount);
+                const amountOk = !prepaid || (rtoAmount.trim() !== "" && Number.isFinite(amount) && amount >= 0 && amount <= order.grandTotal);
+                const chips = [
+                    { label: "Full", value: order.grandTotal },
+                    ...(order.shippingAmount ? [{ label: "Minus shipping", value: order.grandTotal - order.shippingAmount }] : []),
+                    { label: "No refund", value: 0 },
+                ];
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4">
+                        <div role="dialog" aria-modal="true" aria-labelledby="rto-title" className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
+                            <h3 id="rto-title" className="text-lg font-semibold text-text-primary">#{order.orderNumber} returned to us</h3>
+                            <p className="mt-1 text-sm text-text-secondary">
+                                Use this when the parcel has come back because the customer didn&apos;t accept it. The order is closed as Returned.
+                            </p>
+
+                            {prepaid ? (
+                                <>
+                                    <label htmlFor="rto-amount" className="mb-2 mt-4 block text-sm font-medium text-text-primary">
+                                        Refund to the customer (₹)
+                                    </label>
+                                    <input
+                                        id="rto-amount"
+                                        type="number"
+                                        min={0}
+                                        max={order.grandTotal}
+                                        step="0.01"
+                                        inputMode="decimal"
+                                        value={rtoAmount}
+                                        onChange={(e) => setRtoAmount(e.target.value)}
+                                        className="w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                                    />
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {chips.map((c) => (
+                                            <button
+                                                key={c.label}
+                                                type="button"
+                                                onClick={() => setRtoAmount(String(Math.round(c.value * 100) / 100))}
+                                                className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                                                    Number(rtoAmount) === Math.round(c.value * 100) / 100
+                                                        ? "border-brand-primary bg-brand-primary/10 text-brand-primary"
+                                                        : "border-black/10 text-text-secondary hover:bg-black/5"
+                                                }`}
+                                            >
+                                                {c.label} · {formatINR(c.value)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <p className="mt-1.5 text-xs text-text-secondary">
+                                        Any amount from ₹0 to {formatINR(order.grandTotal)}. It goes back through PayU, with a credit note and an email to the customer.
+                                    </p>
+                                    {!amountOk && <p className="mt-1 text-xs text-red-600">Enter an amount between ₹0 and {formatINR(order.grandTotal)}.</p>}
+                                </>
+                            ) : (
+                                <p className="mt-4 rounded-lg bg-black/5 px-3 py-2 text-xs text-text-secondary">This order wasn&apos;t paid online, so there&apos;s nothing to refund.</p>
+                            )}
+
+                            {order.payment.method !== "COD" && (
+                                <label className="mt-4 flex items-start gap-2 text-sm text-text-primary">
+                                    <input
+                                        type="checkbox"
+                                        checked={rtoRestock}
+                                        onChange={(e) => setRtoRestock(e.target.checked)}
+                                        className="mt-0.5 h-4 w-4 rounded border-black/20"
+                                    />
+                                    <span>
+                                        Put the tea back in stock
+                                        <span className="block text-xs text-text-secondary">Untick if the packs are damaged and can&apos;t be sold.</span>
+                                    </span>
+                                </label>
+                            )}
+
+                            <label htmlFor="rto-note" className="mb-2 mt-4 block text-sm font-medium text-text-primary">
+                                Note <span className="font-normal text-text-secondary">(optional, staff only)</span>
+                            </label>
+                            <input
+                                id="rto-note"
+                                value={rtoNote}
+                                onChange={(e) => setRtoNote(e.target.value)}
+                                maxLength={300}
+                                placeholder="e.g. Customer refused, said they ordered by mistake"
+                                className="w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                            />
+
+                            <div className="mt-5 flex justify-end gap-3">
+                                <button
+                                    onClick={() => setRtoOpen(false)}
+                                    disabled={actionLoading}
+                                    className="rounded-xl px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-black/5 disabled:opacity-50"
+                                >
+                                    Back
+                                </button>
+                                <button
+                                    onClick={submitReturned}
+                                    disabled={!amountOk || actionLoading}
+                                    className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
+                                >
+                                    {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                                    {prepaid && amount > 0 ? `Mark returned & refund ${formatINR(amount)}` : "Mark returned"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {chooseOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4">
+                    <div role="dialog" aria-modal="true" aria-labelledby="choose-title" className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
+                        <h3 id="choose-title" className="text-lg font-semibold text-text-primary">How are you sending #{order.orderNumber}?</h3>
+                        <p className="mt-1 text-sm text-text-secondary">Have the parcel packed first.</p>
+
+                        <div className="mt-5 grid gap-3">
+                            <button
+                                onClick={bookShiprocketPickup}
+                                disabled={booking}
+                                className="flex items-start gap-3 rounded-2xl border border-black/10 p-4 text-left transition hover:border-brand-primary hover:bg-brand-primary/5 disabled:opacity-60"
+                            >
+                                <Truck className="mt-0.5 h-5 w-5 shrink-0 text-brand-primary" />
+                                <span>
+                                    <span className="flex items-center gap-2 font-semibold text-text-primary">
+                                        Shiprocket pickup
+                                        {booking && <Loader2 className="h-4 w-4 animate-spin" />}
+                                    </span>
+                                    <span className="mt-0.5 block text-sm text-text-secondary">
+                                        Creates the shipment, assigns a courier and books the pickup. Tracking updates automatically.
+                                    </span>
+                                    {noShiprocketCourier && (
+                                        <span className="mt-1.5 block text-xs font-medium text-amber-700">
+                                            No Shiprocket courier was found for this pincode, so this will probably fail.
+                                        </span>
+                                    )}
+                                </span>
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setChooseOpen(false);
+                                    setShipOpen(true);
+                                }}
+                                disabled={booking}
+                                className="flex items-start gap-3 rounded-2xl border border-black/10 p-4 text-left transition hover:border-brand-primary hover:bg-brand-primary/5 disabled:opacity-60"
+                            >
+                                <Package2 className="mt-0.5 h-5 w-5 shrink-0 text-brand-primary" />
+                                <span>
+                                    <span className="block font-semibold text-text-primary">Another way</span>
+                                    <span className="mt-0.5 block text-sm text-text-secondary">
+                                        India Post, another courier, or delivered by hand. Tracking number optional; you mark it delivered.
+                                    </span>
+                                </span>
+                            </button>
+                        </div>
+
+                        <div className="mt-5 flex justify-end">
+                            <button
+                                onClick={() => setChooseOpen(false)}
+                                disabled={booking}
+                                className="rounded-xl px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-black/5 disabled:opacity-50"
+                            >
+                                Back
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {shipOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4">
+                    <div role="dialog" aria-modal="true" aria-labelledby="ship-title" className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
+                        <h3 id="ship-title" className="text-lg font-semibold text-text-primary">Ship #{order.orderNumber} another way</h3>
+                        <p className="mt-1 text-sm text-text-secondary">
+                            Send the parcel first, then record it here. The order is marked Shipped and the customer is emailed
+                            (with the tracking number, if you have one). Mark it Delivered yourself once it arrives.
+                            {order.shipping?.shiprocketOrderId && order.shipping?.status !== "CANCELLED" && " The Shiprocket shipment created for this order will be cancelled."}
+                        </p>
+
+                        <label htmlFor="ship-courier" className="mb-2 mt-4 block text-sm font-medium text-text-primary">Sent by</label>
+                        <select
+                            id="ship-courier"
+                            value={shipCourier}
+                            onChange={(e) => setShipCourier(e.target.value)}
+                            className="w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        >
+                            {COURIER_CHOICES.map((c) => (
+                                <option key={c}>{c}</option>
+                            ))}
+                        </select>
+                        {shipCourier === OTHER_COURIER && (
+                            <input
+                                aria-label="Courier name"
+                                value={shipOtherCourier}
+                                onChange={(e) => setShipOtherCourier(e.target.value)}
+                                placeholder="Courier name, e.g. DTDC"
+                                className="mt-2 w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                            />
+                        )}
+
+                        {!ownDelivery && (<>
+                        <label htmlFor="ship-number" className="mb-2 mt-4 block text-sm font-medium text-text-primary">
+                            Tracking number <span className="font-normal text-text-secondary">(optional)</span>
+                        </label>
+                        <input
+                            id="ship-number"
+                            autoFocus
+                            value={shipNumber}
+                            onChange={(e) => setShipNumber(e.target.value.toUpperCase())}
+                            placeholder={shipCourier.startsWith("India Post") ? "e.g. EM123456789IN" : "Tracking / consignment number"}
+                            className="w-full rounded-xl border border-black/10 p-3 font-mono text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+                        {shipCourier.startsWith("India Post") &&
+                            shipNumber.trim() !== "" &&
+                            !/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(shipNumber.trim()) && (
+                                <p className="mt-1.5 text-xs text-amber-700">
+                                    India Post numbers usually look like EM123456789IN (2 letters, 9 digits, 2 letters). Please double-check.
+                                </p>
+                            )}
+
+                        <label htmlFor="ship-link" className="mb-2 mt-4 block text-sm font-medium text-text-primary">
+                            Tracking link <span className="font-normal text-text-secondary">(optional)</span>
+                        </label>
+                        <input
+                            id="ship-link"
+                            value={shipLink}
+                            onChange={(e) => setShipLink(e.target.value)}
+                            placeholder={shipCourier.startsWith("India Post") ? "Leave empty to use indiapost.gov.in" : "https://… (leave empty if you don't have one)"}
+                            className="w-full rounded-xl border border-black/10 p-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                        />
+                        <p className="mt-1.5 text-xs text-text-secondary">
+                            {shipCourier.startsWith("India Post")
+                                ? "India Post has no link per parcel; the customer is sent to indiapost.gov.in to enter the number."
+                                : "Not needed. Without a link, the customer gets the courier name and tracking number, and is told to check them on the courier's website."}
+                        </p>
+                        {!shipNumber.trim() && (
+                            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                No tracking number: the customer is told it&apos;s been sent by {shipCourierName || "the courier"}, without a number to track.
+                            </p>
+                        )}
+                        </>)}
+                        {ownDelivery && (
+                            <p className="mt-3 rounded-lg bg-black/5 px-3 py-2 text-xs text-text-secondary">
+                                The customer is told their order is on its way with us. No tracking number is needed.
+                            </p>
+                        )}
+
+                        <div className="mt-5 flex justify-end gap-3">
+                            <button
+                                onClick={closeShip}
+                                disabled={actionLoading}
+                                className="rounded-xl px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-black/5 disabled:opacity-50"
+                            >
+                                Back
+                            </button>
+                            <button
+                                onClick={submitShip}
+                                disabled={!shipCourierName || actionLoading}
+                                className="inline-flex items-center gap-2 rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-primary/90 disabled:opacity-50"
+                            >
+                                {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                                Mark shipped &amp; email customer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {rejectOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-                    <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4">
+                    <div role="dialog" aria-modal="true" className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
                         <h3 className="text-lg font-semibold text-text-primary">Reject return for #{order.orderNumber}?</h3>
                         <p className="mt-1 text-sm text-text-secondary">The customer won&apos;t be refunded. Tell them why.</p>
                         <label className="mb-2 mt-4 block text-sm font-medium text-text-primary">Reason</label>

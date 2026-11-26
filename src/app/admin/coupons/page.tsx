@@ -17,6 +17,9 @@ export interface AdminCoupon {
   usageLimit?: number;
   usedCount: number;
   expiresAt: string;
+  firstOrderOnly?: boolean;
+  onePerCustomer?: boolean;
+  showAtCheckout?: boolean;
   status: "ACTIVE" | "INACTIVE";
 }
 
@@ -24,6 +27,7 @@ export default function CouponsPage() {
   const [coupons, setCoupons] = useState<AdminCoupon[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<AdminCoupon | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchCoupons = async () => {
@@ -114,11 +118,19 @@ export default function CouponsPage() {
         coupons={coupons}
         loading={loading}
         onRefresh={fetchCoupons}
+        onEdit={(c) => {
+          setEditing(c);
+          setOpen(true);
+        }}
       />
 
       <CreateCouponModal
         open={open}
-        onClose={() => setOpen(false)}
+        editing={editing}
+        onClose={() => {
+          setOpen(false);
+          setEditing(null);
+        }}
         onCreated={fetchCoupons}
       />
     </div>

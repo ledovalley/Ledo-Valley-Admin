@@ -57,3 +57,24 @@ export async function downloadOrdersCsv(
     throw new Error(await messageFrom(err));
   }
 }
+
+/** Download the monthly GST summary (GSTR-1 layout) for "YYYY-MM". */
+export async function downloadGstSummary(month: string): Promise<void> {
+  try {
+    const res = await api.get("/admin/reports/gst-summary", {
+      params: { month },
+      responseType: "blob",
+      timeout: 120000,
+    });
+    const url = window.URL.createObjectURL(new Blob([res.data], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ledo-valley-gst-summary_${month}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    throw new Error(await messageFrom(err));
+  }
+}

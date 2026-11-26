@@ -297,7 +297,7 @@ export default function AdminContactPage() {
 
             {selected && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm md:p-6">
-                    <div className="w-full max-w-5xl overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-2xl">
+                    <div className="w-full max-w-5xl max-h-[94vh] overflow-y-auto rounded-[28px] border border-black/10 bg-white shadow-2xl">
                         <div className="flex items-start justify-between gap-4 border-b border-black/5 px-6 py-5">
                             <div>
                                 <h2 className="text-xl font-semibold text-text-primary">

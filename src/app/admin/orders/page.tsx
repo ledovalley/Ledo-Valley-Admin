@@ -20,11 +20,13 @@ import {
 } from "@/lib/orderFlow";
 import { openPrintWindow, writePackingSlips, type SlipOrder } from "@/lib/packingSlip";
 import { downloadBulkInvoices, downloadInvoice } from "@/lib/invoice";
+import { openShiprocketPdf } from "@/lib/shiprocketPrint";
 import ExportOrdersMenu from "@/components/admin/orders/ExportOrdersMenu";
 import {
     ChevronLeft,
     ChevronRight,
     Download,
+    FileText,
     Loader2,
     PackageSearch,
     Printer,
@@ -66,6 +68,16 @@ export default function OrdersPage() {
     const { success, error: toastError, info } = useToast();
 
     const [tabKey, setTabKey] = useState(ORDER_TABS[0].key);
+
+    // Open a tab from a link, e.g. /admin/orders?tab=attention (dashboard "To do").
+    useEffect(() => {
+        try {
+            const wanted = new URLSearchParams(window.location.search).get("tab");
+            if (wanted && ORDER_TABS.some((t) => t.key === wanted)) setTabKey(wanted);
+        } catch {
+            // ignore
+        }
+    }, []);
     const tab = ORDER_TABS.find((t) => t.key === tabKey) ?? ORDER_TABS[0];
     const [counts, setCounts] = useState<Record<string, number | null>>({});
 
@@ -98,8 +110,9 @@ export default function OrdersPage() {
             paymentStatus: tab.paymentStatus ?? (tab.key === "all" ? paymentStatus : ""),
             startDate,
             endDate,
+            attention: tab.attention ? "true" : "",
         }),
-        [search, statusParam, tab.key, paymentStatus, startDate, endDate]
+        [search, statusParam, tab.key, tab.attention, paymentStatus, startDate, endDate]
     );
 
     /* ---------- data ---------- */
@@ -128,7 +141,13 @@ export default function OrdersPage() {
             counted.map(async (t) => {
                 try {
                     const res = await api.get("/admin/orders", {
-                        params: { status: t.status, paymentStatus: t.paymentStatus ?? "", page: 1, limit: 1 },
+                        params: {
+                            status: t.status,
+                            paymentStatus: t.paymentStatus ?? "",
+                            attention: t.attention ? "true" : "",
+                            page: 1,
+                            limit: 1,
+                        },
                     });
                     const d = res.data;
                     // With limit=1, "pages" equals the number of matching orders.
@@ -344,6 +363,23 @@ export default function OrdersPage() {
         }
     };
 
+    // Shiprocket labels / manifest for orders whose pickup is booked.
+    const canPrintShiprocket = selectedOrders.length > 0 && selectedOrders.every((o) => o.status === "READY_TO_SHIP");
+
+    const printShiprocket = async (kind: "labels" | "manifest") => {
+        const label = kind === "labels" ? "Getting shipping labels" : "Getting the manifest";
+        try {
+            setBulk({ label, done: 0, total: 1 });
+            const { skipped, failed } = await openShiprocketPdf(kind, selectedOrders.map((o) => o._id));
+            const left = [...skipped, ...failed];
+            if (left.length) info(`Not included (no Shiprocket courier yet): ${left.join(", ")}`);
+        } catch (err) {
+            toastError(getErrorMessage(err));
+        } finally {
+            setBulk(null);
+        }
+    };
+
     /* ---------- render ---------- */
 
     const busy = !!bulk;
@@ -543,6 +579,24 @@ export default function OrdersPage() {
                                         {bulkStep.label} ({selected.size})
                                     </button>
                                 )}
+                                {canPrintShiprocket && (
+                                    <>
+                                        <button
+                                            onClick={() => printShiprocket("labels")}
+                                            className="inline-flex items-center gap-2 rounded-xl bg-bg-dark px-4 py-2 text-sm font-semibold text-white transition hover:bg-bg-dark/90"
+                                        >
+                                            <Printer className="h-4 w-4" />
+                                            Shipping labels
+                                        </button>
+                                        <button
+                                            onClick={() => printShiprocket("manifest")}
+                                            className="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-medium text-text-primary transition hover:bg-black/5"
+                                        >
+                                            <FileText className="h-4 w-4" />
+                                            Manifest
+                                        </button>
+                                    </>
+                                )}
                                 <button
                                     onClick={() => printSlips(selectedOrders)}
                                     className="inline-flex items-center gap-2 rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-medium text-text-primary transition hover:bg-black/5"
@@ -588,7 +642,114 @@ export default function OrdersPage() {
                 </div>
             ) : (
                 <div className={`overflow-hidden rounded-2xl border border-black/10 bg-white shadow-sm transition ${loading ? "opacity-60" : ""}`}>
-                    <div className="overflow-x-auto">
+                    {/* Phones: one card per order instead of the wide table */}
+                    <div className="md:hidden">
+                        <label className="flex items-center gap-3 border-b border-black/10 bg-gray-50 px-4 py-3 text-xs font-medium uppercase tracking-wider text-text-secondary">
+                            <input
+                                type="checkbox"
+                                checked={allOnPageSelected}
+                                onChange={toggleAll}
+                                disabled={busy}
+                                className="h-5 w-5 cursor-pointer accent-(--color-brand-primary)"
+                            />
+                            Select all on this page
+                        </label>
+                        <ul className="divide-y divide-black/10">
+                            {orders.map((order) => {
+                                const step = nextStep(order);
+                                const isSelected = selected.has(order._id);
+                                const isBusy = rowBusy === order._id;
+                                return (
+                                    <li key={order._id} className={`flex gap-3 px-4 py-4 ${isSelected ? "bg-brand-primary/5" : ""}`}>
+                                        <input
+                                            type="checkbox"
+                                            aria-label={`Select order ${order.orderNumber}`}
+                                            checked={isSelected}
+                                            onChange={() => toggleOne(order._id)}
+                                            disabled={busy}
+                                            className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-(--color-brand-primary)"
+                                        />
+                                        <div className="min-w-0 flex-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => router.push(`/admin/orders/${order._id}`)}
+                                                className="block w-full text-left"
+                                            >
+                                                <span className="flex items-baseline justify-between gap-2">
+                                                    <span className="font-semibold text-text-primary">#{order.orderNumber}</span>
+                                                    <span className="font-semibold text-text-primary">{formatINR(order.grandTotal)}</span>
+                                                </span>
+                                                <span className="mt-0.5 block truncate text-sm text-text-primary">
+                                                    {order.customerSnapshot.name}
+                                                    <span className="text-text-secondary"> · {order.customerSnapshot.phone}</span>
+                                                </span>
+                                                <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${statusBadgeClass(order.status)}`}>
+                                                        {statusLabel(order.status)}
+                                                    </span>
+                                                    {order.attentionNote && (
+                                                        <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-300">
+                                                            ⚠ Needs attention
+                                                        </span>
+                                                    )}
+                                                    {order.payment.status !== "SUCCESS" && (
+                                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ${paymentBadgeClass(order.payment.status)}`}>
+                                                            {paymentLabel(order.payment.status)}
+                                                        </span>
+                                                    )}
+                                                    <span className="text-xs text-text-secondary">{formatDate(order.createdAt)}</span>
+                                                </span>
+                                            </button>
+                                            <div className="mt-3 flex items-center gap-2">
+                                                {step ? (
+                                                    <button
+                                                        onClick={() => advanceOne(order, step)}
+                                                        disabled={isBusy || busy}
+                                                        className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ${step.to === "DELIVERED" ? "bg-green-600" : "bg-brand-primary"}`}
+                                                    >
+                                                        {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                                                        {step.label}
+                                                    </button>
+                                                ) : order.payment.status === "REFUND_PENDING" || order.status === "RETURN_REQUESTED" ? (
+                                                    <button
+                                                        onClick={() => router.push(`/admin/orders/${order._id}`)}
+                                                        className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold text-white ${order.payment.status === "REFUND_PENDING" ? "bg-red-600" : "bg-orange-600"}`}
+                                                    >
+                                                        {order.payment.status === "REFUND_PENDING" ? "Refund" : "Review return"}
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => router.push(`/admin/orders/${order._id}`)}
+                                                        className="flex-1 rounded-xl border border-black/10 px-3 py-2.5 text-sm font-medium text-text-primary"
+                                                    >
+                                                        Open
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => printSlips([order])}
+                                                    disabled={busy}
+                                                    aria-label={`Print packing slip for ${order.orderNumber}`}
+                                                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-black/10 text-text-secondary disabled:opacity-50"
+                                                >
+                                                    <Printer className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => invoiceOne(order)}
+                                                    disabled={isBusy || busy}
+                                                    aria-label={`Download invoice for ${order.orderNumber}`}
+                                                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-black/10 text-text-secondary disabled:opacity-50"
+                                                >
+                                                    <Download className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </div>
+
+                    <div className="hidden overflow-x-auto md:block">
                         <table className="w-full min-w-200 text-sm">
                             <thead className="bg-gray-50 text-left text-xs uppercase tracking-wider text-text-secondary">
                                 <tr>

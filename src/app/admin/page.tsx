@@ -26,12 +26,33 @@ import {
 } from "recharts";
 import { useRouter } from "next/navigation";
 
-interface Stats {
-  totalRevenue: number;
-  totalProfit: number;
-  totalOrders: number;
-  totalProducts: number;
+interface PeriodStats {
+  orders: number;
+  revenue: number;
+  teaSales: number;
+  cost: number;
+  profit: number;
+  gst: number;
+  refunds: number;
+  averageOrder: number;
+  itemsWithoutCost: number;
+}
+
+interface Stats extends PeriodStats {
+  newCustomers: number;
   totalCustomers: number;
+  totalProducts: number;
+}
+
+interface Todo {
+  toPack: number;
+  awaitingPickup: number;
+  needsAttention: number;
+  returnRequests: number;
+  refundsToProcess: number;
+  newEnquiries: number;
+  lowStock: number;
+  lowStockThreshold: number;
 }
 
 interface SalesData {
@@ -51,7 +72,7 @@ interface TopProduct {
   revenue: number;
 }
 
-type OrderStatus = "PAYMENT_SUCCESS" | "PAYMENT_PENDING" | "CANCELLED" | "COMPLETED" | "DELIVERED";
+type OrderStatus = string;
 
 interface Order {
   _id: string;
@@ -64,6 +85,8 @@ interface Order {
 
 interface DashboardData {
   stats: Stats;
+  previous?: PeriodStats;
+  todo?: Todo;
   salesChart: SalesData[];
   comparisonChart: ComparisonData[];
   recentOrders: Order[];
@@ -73,13 +96,29 @@ interface DashboardData {
 const RANGE_OPTIONS = ["1d", "7d", "30d", "90d"] as const;
 type Range = (typeof RANGE_OPTIONS)[number];
 
-const statusClasses: Record<OrderStatus, string> = {
-  PAYMENT_SUCCESS: "bg-green-50 text-green-700, ring-1 ring-green-200",
-  PAYMENT_PENDING: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
+const statusClasses: Record<string, string> = {
+  PAYMENT_SUCCESS: "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
+  READY_TO_SHIP: "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
+  SHIPPED: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200",
+  DELIVERED: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
   CANCELLED: "bg-red-50 text-red-700 ring-1 ring-red-200",
-  COMPLETED: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
-  DELIVERED: "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
+  REFUNDED: "bg-gray-100 text-gray-700 ring-1 ring-gray-200",
+  RETURNED: "bg-rose-50 text-rose-700 ring-1 ring-rose-200",
 };
+const statusLabel: Record<string, string> = { PAYMENT_SUCCESS: "TO PACK", READY_TO_SHIP: "AWAITING PICKUP", RETURNED: "RETURNED TO US" };
+
+const RANGE_LABELS: Record<Range, string> = { "1d": "Today", "7d": "7 days", "30d": "30 days", "90d": "90 days" };
+
+const inr = (n: number | undefined) => `₹${Math.round(Number(n ?? 0)).toLocaleString("en-IN")}`;
+
+/* "+12% vs previous 30 days" */
+function change(now: number, before: number | undefined, range: Range) {
+  if (before === undefined) return "";
+  const period = range === "1d" ? "yesterday" : `previous ${RANGE_LABELS[range]}`;
+  if (!before) return now ? `New vs ${period}` : "";
+  const pct = Math.round(((now - before) / Math.abs(before)) * 100);
+  return `${pct >= 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs ${period}`;
+}
 
 function CustomTooltip({
   active,
@@ -183,6 +222,8 @@ export default function AdminDashboard() {
 
   const {
     stats,
+    previous,
+    todo,
     salesChart = [],
     recentOrders = [],
     topProducts = [],
@@ -201,12 +242,23 @@ export default function AdminDashboard() {
               Dashboard Overview
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-gray-500">
-              Track revenue, orders, product performance, and recent transactions
-              from one place.
+              Paid orders only, by payment date (India time), with refunds taken off.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap gap-1 rounded-xl border border-black/10 bg-gray-50 p-1" role="group" aria-label="Period">
+              {RANGE_OPTIONS.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRange(r)}
+                  aria-pressed={range === r}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${range === r ? "bg-bg-dark text-white" : "text-gray-600 hover:bg-black/5"}`}
+                >
+                  {RANGE_LABELS[r]}
+                </button>
+              ))}
+            </div>
             <div className="rounded-xl border border-black/10 bg-gray-50 px-3 py-2 text-xs text-gray-600">
               {lastUpdated
                 ? `Updated ${lastUpdated.toLocaleTimeString("en-IN", {
@@ -229,29 +281,36 @@ export default function AdminDashboard() {
         </div>
       </section>
 
+      {todo && <TodoStrip todo={todo} onOpen={(href) => router.push(href)} />}
+
       <section className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Total Revenue"
-          value={`₹${stats.totalRevenue.toLocaleString("en-IN")}`}
-          meta="Across selected range"
+          title={`Revenue · ${RANGE_LABELS[range]}`}
+          value={inr(stats.revenue)}
+          meta={[change(stats.revenue, previous?.revenue, range), stats.refunds ? `${inr(stats.refunds)} refunded` : ""].filter(Boolean).join(" · ") || "Money received from paid orders"}
           icon={<ChartNoAxesCombined className="h-5 w-5" />}
         />
         <StatCard
-          title="Gross Profit"
-          value={`₹${stats.totalProfit.toLocaleString("en-IN")}`}
-          meta={`${stats.totalRevenue > 0 ? ((stats.totalProfit / stats.totalRevenue) * 100).toFixed(1) : 0}% Margin`}
+          title="Gross profit"
+          value={inr(stats.profit)}
+          meta={
+            stats.itemsWithoutCost
+              ? `⚠ Cost price missing for ${stats.itemsWithoutCost} item(s): profit shown too high`
+              : `${stats.teaSales > 0 ? ((stats.profit / stats.teaSales) * 100).toFixed(1) : 0}% of tea sales excl. GST (${inr(stats.teaSales)})`
+          }
+          hint="Tea sales excluding GST and shipping, minus the cost price of the tea."
           icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
         />
         <StatCard
           title="Orders"
-          value={stats.totalOrders}
-          meta="Completed and active"
+          value={stats.orders}
+          meta={[change(stats.orders, previous?.orders, range), stats.orders ? `avg ${inr(stats.averageOrder)}` : ""].filter(Boolean).join(" · ") || "Paid orders"}
           icon={<ShoppingCart className="h-5 w-5" />}
         />
         <StatCard
-          title="Customers"
-          value={stats.totalCustomers}
-          meta="Unique buyers"
+          title="New customers"
+          value={stats.newCustomers}
+          meta={`${stats.totalCustomers.toLocaleString("en-IN")} accounts in total · GST collected ${inr(stats.gst)}`}
           icon={<Users className="h-5 w-5" />}
         />
       </section>
@@ -266,26 +325,12 @@ export default function AdminDashboard() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {RANGE_OPTIONS.map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRange(r)}
-                  className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition ${range === r
-                    ? "bg-bg-dark text-white"
-                    : "border border-black/10 bg-bg-surface text-gray-600 hover:bg-gray-50"
-                    }`}
-                >
-                  {r.toUpperCase()}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="rounded-2xl bg-neutral-50/60 p-4">
               <div className="text-xs uppercase tracking-wide text-gray-500">
-                Peak Revenue
+                {range === "1d" ? "Best hour" : "Best day"}
               </div>
               <div className="mt-2 text-2xl font-semibold text-gray-900">
                 ₹{peakRevenue.toLocaleString("en-IN")}
@@ -294,11 +339,11 @@ export default function AdminDashboard() {
 
             <div className="rounded-2xl bg-neutral-50/60 p-4">
               <div className="text-xs uppercase tracking-wide text-gray-500">
-                Selected Range
+                Average order
               </div>
               <div className="mt-2 flex items-center gap-2 text-2xl font-semibold text-gray-900">
                 <TrendingUp className="h-5 w-5 text-emerald-600" />
-                {range.toUpperCase()}
+                {inr(stats.averageOrder)}
               </div>
             </div>
           </div>
@@ -459,9 +504,9 @@ export default function AdminDashboard() {
         <div className="rounded-[28px] border border-black/10 bg-bg-surface p-6 shadow-sm">
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Recent Orders</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Latest paid orders</h2>
               <p className="mt-1 text-sm text-gray-500">
-                Latest transactions across the store.
+                Most recent payments in this period.
               </p>
             </div>
             <button
@@ -487,10 +532,10 @@ export default function AdminDashboard() {
                         {order.customerName}
                       </div>
                       <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusClasses[order.status]
+                        className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusClasses[order.status] || "bg-gray-100 text-gray-700 ring-1 ring-gray-200"
                           }`}
                       >
-                        {order.status.replaceAll("_", " ")}
+                        {statusLabel[order.status] || order.status.replaceAll("_", " ")}
                       </span>
                     </div>
                     <div className="mt-1 text-xs text-gray-500">
@@ -507,7 +552,7 @@ export default function AdminDashboard() {
               ))
             ) : (
               <div className="rounded-2xl bg-gray-50 p-6 text-sm text-gray-500">
-                No recent orders found.
+                No paid orders in this period.
               </div>
             )}
           </div>
@@ -517,19 +562,54 @@ export default function AdminDashboard() {
   );
 }
 
+/* Today's jobs, always current (not tied to the period). */
+function TodoStrip({ todo, onOpen }: { todo: Todo; onOpen: (href: string) => void }) {
+  const items = [
+    { label: "To pack", n: todo.toPack, href: "/admin/orders?tab=to-pack", urgent: true },
+    { label: "Awaiting pickup", n: todo.awaitingPickup, href: "/admin/orders?tab=to-ship" },
+    { label: "Needs attention", n: todo.needsAttention, href: "/admin/orders?tab=attention", urgent: true },
+    { label: "Refunds to process", n: todo.refundsToProcess, href: "/admin/orders?tab=refunds", urgent: true },
+    { label: "Return requests", n: todo.returnRequests, href: "/admin/orders?tab=returns", hideIfZero: true },
+    { label: "New enquiries", n: todo.newEnquiries, href: "/admin/inquiries" },
+    { label: `Low stock (≤ ${todo.lowStockThreshold})`, n: todo.lowStock, href: "/admin/stock?filter=low", urgent: true },
+  ].filter((i) => !(i.hideIfZero && !i.n));
+
+  return (
+    <section aria-label="To do" className="rounded-[28px] border border-black/10 bg-bg-surface p-5 shadow-sm">
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">To do now</h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+        {items.map((i) => (
+          <button
+            key={i.label}
+            onClick={() => onOpen(i.href)}
+            className={`rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${
+              i.n && i.urgent ? "border-amber-300 bg-amber-50" : "border-black/10 bg-white"
+            }`}
+          >
+            <div className={`text-2xl font-semibold ${i.n && i.urgent ? "text-amber-900" : "text-gray-900"}`}>{i.n}</div>
+            <div className="mt-1 text-xs text-gray-600">{i.label}</div>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function StatCard({
   title,
   value,
   meta,
   icon,
+  hint,
 }: {
   title: string;
   value: string | number;
   meta: string;
   icon: React.ReactNode;
+  hint?: string;
 }) {
   return (
-    <div className="rounded-3xl border border-black/10 bg-bg-surface p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+    <div title={hint} className="rounded-3xl border border-black/10 bg-bg-surface p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-sm font-medium text-gray-500">{title}</div>

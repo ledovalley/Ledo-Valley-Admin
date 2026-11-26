@@ -103,7 +103,7 @@ export default function AdminCustomersPage() {
     };
 
     return (
-        <div className="min-h-screen p-8 space-y-8">
+        <div className="min-h-screen p-0 sm:p-4 lg:p-8 space-y-6 sm:space-y-8">
 
             {/* HEADER */}
             <div>
@@ -159,7 +159,7 @@ export default function AdminCustomersPage() {
                 </div>
 
                 {/* Spend + Orders + Date Filters */}
-                <div className="grid grid-cols-6 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
 
                     <input
                         type="number"
@@ -210,13 +210,13 @@ export default function AdminCustomersPage() {
             </div>
 
             {/* ================= TABLE ================= */}
-            <div className="bg-bg-surface rounded-2xl border shadow-sm overflow-hidden">
-                <table className="w-full text-sm">
+            <div className="bg-bg-surface rounded-2xl border shadow-sm overflow-x-auto">
+                <table className="w-full min-w-[720px] text-sm">
                     <thead className="bg-bg-dark/10 text-xs uppercase text-gray-600">
                         <tr>
                             <th className="px-6 py-4 text-left">Customer</th>
-                            <th className="px-6 py-4 text-left">Orders</th>
-                            <th className="px-6 py-4 text-left">Total Spend</th>
+                            <th className="px-6 py-4 text-left" title="Paid orders only">Paid orders</th>
+                            <th className="px-6 py-4 text-left" title="Paid orders, minus refunds">Total Spend</th>
                             <th className="px-6 py-4 text-left">Last Order</th>
                             <th className="px-6 py-4 text-left">Joined</th>
                         </tr>

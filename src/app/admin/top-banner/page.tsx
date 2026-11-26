@@ -298,7 +298,7 @@ function PreviewCard({ activeBanners }: { activeBanners: Banner[] }) {
                 </div>
             </div>
 
-            <div className="flex items-center justify-between bg-white/50 px-6 py-4 text-xs text-text-secondary">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-white/50 px-4 py-3 sm:px-6 sm:py-4 text-xs text-text-secondary">
                 <span>Active banners: {activeBanners.length}</span>
                 <span>Next rotation: {hasRotation ? "Soon" : "None"}</span>
             </div>
@@ -539,7 +539,7 @@ export default function AdminTopBannerPage() {
             <div className="mx-auto max-w-7xl space-y-8">
                 <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
                     <div>
-                        <h1 className="font-playfair text-4xl md:text-5xl text-(--color-text-primary)">
+                        <h1 className="font-playfair text-3xl md:text-5xl text-(--color-text-primary)">
                             Top Banner Manager
                         </h1>
                         <p className="mt-2 max-w-2xl text-sm md:text-base text-text-secondary">

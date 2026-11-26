@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { FileSpreadsheet, Loader2 } from "lucide-react";
-import { downloadOrdersCsv, type ExportScope, type ExportType } from "@/lib/exportOrders";
+import { downloadGstSummary, downloadOrdersCsv, type ExportScope, type ExportType } from "@/lib/exportOrders";
 
 interface Props {
   /* The filters of the list on screen (tab, search, status, dates). */
@@ -17,12 +17,20 @@ interface Props {
 const fmt = (d: string) =>
   new Date(`${d}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
+/* Last month in India time, as YYYY-MM (GST returns are filed for the month gone by). */
+const lastMonth = () => {
+  const ist = new Date(Date.now() + 5.5 * 3600 * 1000);
+  const d = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth() - 1, 1));
+  return d.toISOString().slice(0, 7);
+};
+
 const rangeLabel = (from: string, to: string) =>
   from && to ? `${fmt(from)} – ${fmt(to)}` : from ? `from ${fmt(from)}` : to ? `up to ${fmt(to)}` : "all dates";
 
 export default function ExportOrdersMenu({ viewParams, startDate, endDate, disabled, onDone, onError }: Props) {
   const [open, setOpen] = useState(false);
   const [working, setWorking] = useState<string | null>(null);
+  const [gstMonth, setGstMonth] = useState(lastMonth);
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -86,6 +94,20 @@ export default function ExportOrdersMenu({ viewParams, startDate, endDate, disab
     }
   };
 
+  const runGst = async () => {
+    if (!/^\d{4}-\d{2}$/.test(gstMonth)) return;
+    setOpen(false);
+    setWorking("gst");
+    try {
+      await downloadGstSummary(gstMonth);
+      onDone(`GST summary for ${gstMonth} downloaded.`);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Couldn't download the GST summary.");
+    } finally {
+      setWorking(null);
+    }
+  };
+
   return (
     <div className="relative" ref={box}>
       <button
@@ -104,7 +126,7 @@ export default function ExportOrdersMenu({ viewParams, startDate, endDate, disab
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-white shadow-xl"
+          className="absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-black/10 bg-white shadow-xl"
         >
           <p className="border-b border-black/5 px-4 py-3 text-xs text-text-secondary">
             Downloads a CSV file that opens in Excel or Google Sheets. Set the From / To dates first to choose the
@@ -122,6 +144,34 @@ export default function ExportOrdersMenu({ viewParams, startDate, endDate, disab
               <span className="mt-0.5 block text-xs text-text-secondary">{o.hint}</span>
             </button>
           ))}
+          <div className="border-t border-black/5 px-4 py-3">
+            <span className="block text-sm font-medium text-text-primary">GST summary for your CA</span>
+            <span className="mt-0.5 block text-xs text-text-secondary">
+              One month, laid out for GSTR-1: sales by state, HSN summary, documents issued, every invoice and credit note.
+            </span>
+            <div className="mt-2 flex items-center gap-2">
+              <label htmlFor="gst-month" className="sr-only">
+                Month
+              </label>
+              <input
+                id="gst-month"
+                type="month"
+                value={gstMonth}
+                max={new Date().toISOString().slice(0, 7)}
+                onChange={(e) => setGstMonth(e.target.value)}
+                className="min-w-0 flex-1 rounded-lg border border-black/10 px-2 py-1.5 text-sm"
+              />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={runGst}
+                disabled={!/^\d{4}-\d{2}$/.test(gstMonth)}
+                className="rounded-lg bg-bg-dark px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-bg-dark/90 disabled:opacity-50"
+              >
+                Download
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

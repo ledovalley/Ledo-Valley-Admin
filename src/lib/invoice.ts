@@ -16,6 +16,12 @@ export async function downloadInvoice(orderId: string, orderNumber: string) {
   saveBlob(res.data, `Invoice-${orderNumber}.pdf`);
 }
 
+/* One credit note (index 0 = first refund on the order). */
+export async function downloadCreditNote(orderId: string, index: number, number: string) {
+  const res = await api.get(`/admin/orders/${orderId}/credit-notes/${index}`, { responseType: "blob" });
+  saveBlob(res.data, `Credit-Note-${number.replaceAll("/", "-")}.pdf`);
+}
+
 export async function downloadBulkInvoices(params: Record<string, string>) {
   const res = await api.get(`/admin/orders/bulk-invoice`, { params, responseType: "blob" });
   saveBlob(res.data, `Invoices-${new Date().toISOString().split("T")[0]}.pdf`);

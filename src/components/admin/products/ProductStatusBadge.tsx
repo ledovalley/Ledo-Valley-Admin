@@ -1,5 +1,5 @@
 interface Props {
-  status: "DRAFT" | "ACTIVE" | "INACTIVE";
+  status: "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED";
 }
 
 export default function ProductStatusBadge({ status }: Props) {
@@ -8,6 +8,8 @@ export default function ProductStatusBadge({ status }: Props) {
       ? "bg-green-100 text-green-700"
       : status === "DRAFT"
       ? "bg-yellow-100 text-yellow-700"
+      : status === "ARCHIVED"
+      ? "bg-slate-100 text-slate-500"
       : "bg-gray-200 text-gray-600";
 
   return (

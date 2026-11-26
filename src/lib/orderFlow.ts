@@ -12,7 +12,8 @@ export type OrderStatus =
   | "CANCELLED"
   | "RETURN_REQUESTED"
   | "RETURN_APPROVED"
-  | "REFUNDED";
+  | "REFUNDED"
+  | "RETURNED";
 
 export const STATUS_LABEL: Record<string, string> = {
   PLACED: "New order",
@@ -27,6 +28,7 @@ export const STATUS_LABEL: Record<string, string> = {
   RETURN_APPROVED: "Return approved",
   RETURN_REJECTED: "Return rejected",
   REFUNDED: "Refunded",
+  RETURNED: "Returned to us",
 };
 
 export const PAYMENT_LABEL: Record<string, string> = {
@@ -64,6 +66,8 @@ export function statusBadgeClass(status: string) {
       return "bg-amber-100 text-amber-700 ring-amber-200";
     case "REFUNDED":
       return "bg-purple-100 text-purple-700 ring-purple-200";
+    case "RETURNED":
+      return "bg-rose-100 text-rose-700 ring-rose-200";
     default:
       return "bg-gray-100 text-gray-600 ring-gray-200";
   }
@@ -103,14 +107,19 @@ export interface NextStep {
 export function nextStep(order: {
   status: string;
   payment?: { method?: string };
+  shipping?: { status?: string } | null;
+  rto?: { startedAt?: string } | null;
 }): NextStep | null {
+  // Coming back to us (customer didn't accept it): handled with "Returned to us".
+  if (order.rto?.startedAt || (order.shipping?.status || "").startsWith("RTO")) return null;
+
   const isCodPlaced = order.status === "PLACED" && order.payment?.method === "COD";
 
   if (order.status === "PAYMENT_SUCCESS" || isCodPlaced) {
     return {
       to: "READY_TO_SHIP",
-      label: "Book pickup",
-      done: "booked for pickup",
+      label: "Book Shiprocket pickup",
+      done: "booked for Shiprocket pickup",
       hint: "This creates the Shiprocket shipment, assigns a courier and requests pickup. Have the parcel packed before the courier arrives.",
     };
   }
@@ -155,6 +164,7 @@ export function progressIndex(order: { status: string; payment?: { status?: stri
     case "REFUNDED":
       return 3;
     case "SHIPPED":
+    case "RETURNED":
       return 2;
     case "READY_TO_SHIP":
       return 1;
@@ -172,6 +182,8 @@ export interface OrderTab {
   status: string;
   /** Backend payment-status filter, if the tab needs one */
   paymentStatus?: string;
+  /** Only orders with a "needs attention" note */
+  attention?: boolean;
   /** Whether to show a live count on the tab */
   counted: boolean;
   empty: string;
@@ -181,10 +193,12 @@ export const ORDER_TABS: OrderTab[] = [
   { key: "to-pack", label: "To pack", status: "PAYMENT_SUCCESS", counted: true, empty: "Nothing to pack right now." },
   { key: "to-ship", label: "Awaiting pickup", status: "READY_TO_SHIP", counted: true, empty: "No orders waiting for courier pickup." },
   { key: "shipped", label: "Shipped", status: "SHIPPED", counted: true, empty: "No orders in transit." },
+  { key: "attention", label: "Needs attention", status: "", attention: true, counted: true, empty: "Nothing needs attention." },
   { key: "returns", label: "Return requests", status: "RETURN_REQUESTED", counted: true, empty: "No return requests." },
   { key: "refunds", label: "Refunds to process", status: "CANCELLED", paymentStatus: "REFUND_PENDING", counted: true, empty: "No refunds waiting. Customer-cancelled paid orders appear here." },
   { key: "delivered", label: "Delivered", status: "DELIVERED", counted: false, empty: "No delivered orders match." },
   { key: "cancelled", label: "Cancelled", status: "CANCELLED", counted: false, empty: "No cancelled orders match." },
+  { key: "returned", label: "Returned (RTO)", status: "RETURNED", counted: false, empty: "No parcels have come back." },
   { key: "all", label: "All orders", status: "", counted: false, empty: "No orders match these filters." },
 ];
 

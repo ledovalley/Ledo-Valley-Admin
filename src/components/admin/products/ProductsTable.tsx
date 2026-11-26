@@ -5,7 +5,7 @@ import api from "@/lib/api";
 import { AdminProduct } from "@/app/admin/products/page";
 import ProductStatusBadge from "./ProductStatusBadge";
 import { getErrorMessage } from "@/lib/getErrorMessage";
-import { Eye, Trash2, Power, Package2 } from "lucide-react";
+import { Eye, Trash2, Power, Package2, Archive, ArchiveRestore } from "lucide-react";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/ToastProvider";
 import TableSkeleton from "../TableSkeleton";
@@ -54,6 +54,8 @@ export default function ProductsTable({
     }
   };
 
+  const [archiveTarget, setArchiveTarget] = useState<AdminProduct | null>(null);
+
   const deleteProduct = async () => {
     if (!deleteTarget) return;
 
@@ -62,6 +64,27 @@ export default function ProductsTable({
       await api.delete(`/admin/products/${deleteTarget._id}`);
       success("Product deleted successfully.");
       setDeleteTarget(null);
+      onRefresh();
+    } catch (error) {
+      // Ordered teas can't be deleted: offer to archive instead.
+      const data = (error as { response?: { data?: { canArchive?: boolean } } })?.response?.data;
+      if (data?.canArchive) {
+        setArchiveTarget(deleteTarget);
+        setDeleteTarget(null);
+      } else {
+        showError(getErrorMessage(error));
+      }
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const setArchived = async (product: AdminProduct, archive: boolean) => {
+    try {
+      setBusyId(product._id);
+      await api.put(`/admin/products/${product._id}/archive`, { archive });
+      success(archive ? `${product.name} archived.` : `${product.name} restored as inactive.`);
+      setArchiveTarget(null);
       onRefresh();
     } catch (error) {
       showError(getErrorMessage(error));
@@ -191,7 +214,16 @@ export default function ProductsTable({
                           </button>
                         )}
 
-                        {!isDraft ? (
+                        {p.status === "ARCHIVED" ? (
+                          <button
+                            disabled={busy}
+                            onClick={() => setArchived(p, false)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-brand-primary/20 px-3 py-2 text-xs font-medium text-brand-primary transition hover:bg-brand-primary/5 disabled:cursor-not-allowed"
+                          >
+                            <ArchiveRestore className="h-3.5 w-3.5" />
+                            Restore
+                          </button>
+                        ) : !isDraft ? (
                           <button
                             disabled={busy}
                             onClick={() => toggleStatus(p)}
@@ -208,14 +240,27 @@ export default function ProductsTable({
                           </span>
                         )}
 
-                        <button
-                          disabled={busy}
-                          onClick={() => setDeleteTarget(p)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Delete
-                        </button>
+                        {p.status === "ACTIVE" || p.status === "INACTIVE" ? (
+                          <button
+                            disabled={busy}
+                            onClick={() => setArchiveTarget(p)}
+                            title="Remove from the shop and this list; past orders, invoices and reviews stay"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-bg-dark/10 px-3 py-2 text-xs font-medium text-text-secondary transition hover:bg-bg-dark/5 disabled:cursor-not-allowed"
+                          >
+                            <Archive className="h-3.5 w-3.5" />
+                            Archive
+                          </button>
+                        ) : (
+                          <button
+                            disabled={busy}
+                            onClick={() => setDeleteTarget(p)}
+                            title="Only for drafts and teas that were never ordered"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -240,6 +285,22 @@ export default function ProductsTable({
         loading={busyId === deleteTarget?._id}
         onClose={() => setDeleteTarget(null)}
         onConfirm={deleteProduct}
+      />
+
+      <ConfirmDialog
+        open={!!archiveTarget}
+        title="Archive this tea?"
+        description={
+          archiveTarget
+            ? `${archiveTarget.name} will leave the shop and this list (find it under the "Archived" filter). Past orders, invoices and reviews stay as they are, and you can restore it any time.`
+            : ""
+        }
+        confirmText="Archive"
+        cancelText="Cancel"
+        tone="default"
+        loading={busyId === archiveTarget?._id}
+        onClose={() => setArchiveTarget(null)}
+        onConfirm={() => archiveTarget && setArchived(archiveTarget, true)}
       />
     </>
   );

@@ -39,7 +39,7 @@ interface Product {
   sku: string;
   description?: string;
   teaType: string;
-  status: "ACTIVE" | "INACTIVE" | "DRAFT";
+  status: "ACTIVE" | "INACTIVE" | "DRAFT" | "ARCHIVED";
   featured: boolean;
   tags: string[];
   bestFor: string[];
@@ -159,12 +159,23 @@ export default function ProductViewPage() {
     );
   }, [product]);
 
+  // Ordered teas are archived (kept for past orders); drafts and never-ordered ones can be deleted.
+  const canArchive = product?.status === "ACTIVE" || product?.status === "INACTIVE";
+
   const handleDelete = async () => {
-    if (!confirm("Delete product permanently?")) return;
+    const archive = canArchive;
+    const question = archive
+      ? "Archive this tea? It leaves the shop and the product list; past orders, invoices and reviews stay. You can restore it from the Archived filter."
+      : "Delete this product permanently? This can't be undone.";
+    if (!confirm(question)) return;
 
     try {
       setDeleting(true);
-      await api.delete(`/admin/products/${productId}`);
+      if (archive) {
+        await api.put(`/admin/products/${productId}/archive`, { archive: true });
+      } else {
+        await api.delete(`/admin/products/${productId}`);
+      }
       router.push("/admin/products");
     } catch (err) {
       alert(getErrorMessage(err));
@@ -228,7 +239,7 @@ export default function ProductViewPage() {
             className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Trash2 className="h-4 w-4" />
-            {deleting ? "Deleting..." : "Delete"}
+            {deleting ? "Please wait..." : canArchive ? "Archive" : "Delete"}
           </button>
         </div>
       </div>

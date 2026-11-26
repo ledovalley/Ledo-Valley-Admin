@@ -5,6 +5,7 @@ import { Eye, EyeOff, Lock, ShieldAlert, User } from "lucide-react";
 import api from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { getErrorMessage } from "@/lib/getErrorMessage";
+import { safeNext } from "@/lib/auth";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -43,7 +44,8 @@ export default function AdminLoginPage() {
       const storage = rememberMe ? localStorage : sessionStorage;
       storage.setItem("admin_token", res.data.token);
 
-      router.push("/admin");
+      // Back to the page you were on when the login ran out.
+      router.push(safeNext(new URLSearchParams(window.location.search).get("next")));
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {

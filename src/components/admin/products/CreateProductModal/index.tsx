@@ -145,7 +145,7 @@ export default function CreateProductModal({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
               {STEPS.map((item) => {
                 const active = step === item.id;
                 const completed = step > item.id;
@@ -173,7 +173,7 @@ export default function CreateProductModal({
                       </div>
 
                       <div className="min-w-0">
-                        <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                        <p className="hidden text-xs font-medium uppercase tracking-wide text-gray-400 sm:block">
                           Step {item.id}
                         </p>
                         <p

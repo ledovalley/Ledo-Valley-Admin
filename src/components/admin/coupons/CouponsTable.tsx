@@ -9,18 +9,21 @@ import {
   Trash2,
   TicketPercent,
   CalendarClock,
+  Pencil,
 } from "lucide-react";
 
 interface Props {
   coupons: AdminCoupon[];
   loading: boolean;
   onRefresh: () => void;
+  onEdit?: (coupon: AdminCoupon) => void;
 }
 
 export default function CouponsTable({
   coupons,
   loading,
   onRefresh,
+  onEdit,
 }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -156,6 +159,16 @@ export default function CouponsTable({
                     <div className="mt-1 text-xs text-text-secondary">
                       Redemptions used
                     </div>
+                    {(c.firstOrderOnly || c.onePerCustomer) && (
+                      <div className="mt-1 text-xs font-medium text-brand-primary">
+                        {[c.firstOrderOnly && "First order only", c.onePerCustomer && "Once per customer"].filter(Boolean).join(" · ")}
+                      </div>
+                    )}
+                    {c.showAtCheckout === false && (
+                      <div className="mt-1 inline-flex rounded-full bg-black/5 px-2 py-0.5 text-[11px] font-medium text-text-secondary">
+                        Private (not listed)
+                      </div>
+                    )}
                   </td>
 
                   <td className="px-6 py-4">
@@ -183,6 +196,16 @@ export default function CouponsTable({
 
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
+                      {onEdit && (
+                        <button
+                          disabled={isBusy}
+                          onClick={() => onEdit(c)}
+                          className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-3 py-2 text-xs font-medium text-text-primary transition hover:bg-bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
+                      )}
                       <button
                         disabled={isBusy}
                         onClick={() => toggleStatus(c._id)}
@@ -193,7 +216,7 @@ export default function CouponsTable({
                         ) : (
                           <Power className="h-3.5 w-3.5" />
                         )}
-                        Toggle
+                        {c.status === "ACTIVE" ? "Turn off" : "Turn on"}
                       </button>
 
                       <button

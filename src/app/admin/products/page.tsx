@@ -22,7 +22,7 @@ import {
 export interface AdminProduct {
     _id: string;
     name: string;
-    status: "DRAFT" | "ACTIVE" | "INACTIVE";
+    status: "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED";
     featured: boolean;
     tags: string[];
     variantCount: number;
@@ -72,7 +72,7 @@ export default function ProductsPage() {
 
     const [query, setQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState<
-        "ALL" | "DRAFT" | "ACTIVE" | "INACTIVE"
+        "ALL" | "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED"
     >("ALL");
     const [featuredFilter, setFeaturedFilter] = useState<
         "ALL" | "FEATURED" | "NOT_FEATURED"
@@ -105,11 +105,11 @@ export default function ProductsPage() {
         ).length;
 
         const featuredCount = products.filter(
-            (p) => p.featured
+            (p) => p.featured && p.status !== "ARCHIVED"
         ).length;
 
         return {
-            total: products.length,
+            total: products.filter((p) => p.status !== "ARCHIVED").length,
             activeCount,
             draftCount,
             featuredCount,
@@ -127,8 +127,11 @@ export default function ProductsPage() {
                     tag.toLowerCase().includes(normalizedQuery)
                 );
 
+            // Archived teas only show under the "Archived" filter.
             const matchesStatus =
-                statusFilter === "ALL" || product.status === statusFilter;
+                statusFilter === "ALL"
+                    ? product.status !== "ARCHIVED"
+                    : product.status === statusFilter;
 
             const matchesFeatured =
                 featuredFilter === "ALL" ||
@@ -241,6 +244,7 @@ export default function ProductsPage() {
                                     | "DRAFT"
                                     | "ACTIVE"
                                     | "INACTIVE"
+                                    | "ARCHIVED"
                                 )
                             }
                             className="w-full rounded-xl border border-bg-dark/10 bg-white px-4 py-3 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
@@ -249,6 +253,7 @@ export default function ProductsPage() {
                             <option value="ACTIVE">Active</option>
                             <option value="DRAFT">Draft</option>
                             <option value="INACTIVE">Inactive</option>
+                            <option value="ARCHIVED">Archived</option>
                         </select>
                     </div>
 

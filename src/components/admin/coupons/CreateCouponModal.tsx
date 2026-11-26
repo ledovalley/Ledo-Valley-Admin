@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { AdminCoupon } from "@/app/admin/coupons/page";
 import api from "@/lib/api";
 import { getErrorMessage } from "@/lib/getErrorMessage";
 import {
@@ -16,12 +17,15 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onCreated: () => void;
+  /* When set, the modal edits this coupon instead of creating one. */
+  editing?: AdminCoupon | null;
 }
 
 export default function CreateCouponModal({
   open,
   onClose,
   onCreated,
+  editing = null,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,9 +37,33 @@ export default function CreateCouponModal({
   const [maxDiscount, setMaxDiscount] = useState<number | "">("");
   const [usageLimit, setUsageLimit] = useState<number | "">("");
   const [expiresAt, setExpiresAt] = useState("");
+  const [firstOrderOnly, setFirstOrderOnly] = useState(false);
+  const [onePerCustomer, setOnePerCustomer] = useState(false);
+  const [showAtCheckout, setShowAtCheckout] = useState(true);
 
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Fill the form with the coupon being edited; start empty otherwise.
+  useEffect(() => {
+    if (!open) return;
+    if (!editing) {
+      resetForm();
+      return;
+    }
+    setCode(editing.code);
+    setType(editing.type);
+    setValue(editing.value);
+    setMinOrderAmount(editing.minOrderAmount || "");
+    setMaxDiscount(editing.maxDiscount ?? "");
+    setUsageLimit(editing.usageLimit ?? "");
+    setExpiresAt(editing.expiresAt ? String(editing.expiresAt).slice(0, 10) : "");
+    setFirstOrderOnly(!!editing.firstOrderOnly);
+    setOnePerCustomer(!!editing.onePerCustomer);
+    setShowAtCheckout(editing.showAtCheckout !== false);
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editing]);
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -62,9 +90,10 @@ export default function CreateCouponModal({
     if (expiry <= today) return false;
 
     if (type === "PERCENT" && Number(value) > 100) return false;
+    if (editing && usageLimit !== "" && Number(usageLimit) < editing.usedCount) return false;
 
     return true;
-  }, [code, value, expiresAt, type]);
+  }, [code, value, expiresAt, type, editing, usageLimit]);
 
   const previewDiscount = useMemo(() => {
     if (!value) return "—";
@@ -92,9 +121,12 @@ export default function CreateCouponModal({
     today.setHours(0, 0, 0, 0);
     const expiry = new Date(expiresAt);
     if (expiry <= today) return "Expiry date must be in the future.";
+    if (editing && usageLimit !== "" && Number(usageLimit) < editing.usedCount) {
+      return `Usage limit can't be below the ${editing.usedCount} times it's already been used.`;
+    }
 
     return null;
-  }, [code, value, type, expiresAt]);
+  }, [code, value, type, expiresAt, editing, usageLimit]);
 
   const resetForm = () => {
     setCode("");
@@ -104,6 +136,9 @@ export default function CreateCouponModal({
     setUsageLimit("");
     setExpiresAt("");
     setType("PERCENT");
+    setFirstOrderOnly(false);
+    setOnePerCustomer(false);
+    setShowAtCheckout(true);
     setError(null);
   };
 
@@ -114,8 +149,7 @@ export default function CreateCouponModal({
       setLoading(true);
       setError(null);
 
-      await api.post("/admin/coupons", {
-        code: code.trim(),
+      const body = {
         type,
         value: Number(value),
         minOrderAmount: minOrderAmount === "" ? 0 : Number(minOrderAmount),
@@ -125,7 +159,15 @@ export default function CreateCouponModal({
             : null,
         usageLimit: usageLimit === "" ? null : Number(usageLimit),
         expiresAt,
-      });
+        firstOrderOnly,
+        onePerCustomer,
+        showAtCheckout,
+      };
+      if (editing) {
+        await api.put(`/admin/coupons/${editing._id}`, body);
+      } else {
+        await api.post("/admin/coupons", { code: code.trim(), ...body });
+      }
 
       resetForm();
       onCreated();
@@ -140,7 +182,7 @@ export default function CreateCouponModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
       <div
         className="absolute inset-0 bg-black/55 backdrop-blur-sm"
         onClick={onClose}
@@ -160,7 +202,7 @@ export default function CreateCouponModal({
               id="create-coupon-title"
               className="text-xl font-semibold text-text-primary"
             >
-              Create Coupon
+              {editing ? `Edit ${editing.code}` : "Create Coupon"}
             </h2>
             <p className="mt-1 text-sm text-text-secondary">
               Configure discount rules, eligibility, and expiration.
@@ -176,7 +218,7 @@ export default function CreateCouponModal({
           </button>
         </div>
 
-        <div className="grid max-h-[85vh] overflow-y-auto lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="grid max-h-[calc(94vh-4.5rem)] overflow-y-auto lg:grid-cols-[1.2fr_0.8fr]">
           <div className="space-y-6 px-6 py-6 sm:px-8">
             {error ? (
               <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -192,11 +234,14 @@ export default function CreateCouponModal({
                 ref={firstInputRef}
                 placeholder="SUMMER2026"
                 value={code}
+                readOnly={!!editing}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 className="w-full rounded-xl border border-black/10 bg-white px-4 py-3 text-sm text-text-primary outline-none transition placeholder:text-text-secondary/70 focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
               />
               <p className="text-xs text-text-secondary">
-                Use a short, readable code customers can type easily.
+                {editing
+                  ? "The code can't be changed (past orders use it). Create a new coupon for a different code."
+                  : "Use a short, readable code customers can type easily."}
               </p>
             </div>
 
@@ -338,6 +383,49 @@ export default function CreateCouponModal({
               </p>
             </div>
 
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-medium text-text-primary">Who can use it</legend>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-black/10 px-4 py-3 transition hover:bg-bg-surface">
+                <input
+                  type="checkbox"
+                  checked={firstOrderOnly}
+                  onChange={(e) => setFirstOrderOnly(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-brand-primary"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-text-primary">First order only</span>
+                  <span className="block text-xs text-text-secondary">For welcome codes: only customers who haven&apos;t paid for an order before.</span>
+                </span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-black/10 px-4 py-3 transition hover:bg-bg-surface">
+                <input
+                  type="checkbox"
+                  checked={onePerCustomer}
+                  onChange={(e) => setOnePerCustomer(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-brand-primary"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-text-primary">Once per customer</span>
+                  <span className="block text-xs text-text-secondary">Each customer can use this code on one order.</span>
+                </span>
+              </label>
+            </fieldset>
+
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-black/10 px-4 py-3 transition hover:bg-bg-surface">
+              <input
+                type="checkbox"
+                checked={showAtCheckout}
+                onChange={(e) => setShowAtCheckout(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-brand-primary"
+              />
+              <span>
+                <span className="block text-sm font-medium text-text-primary">Show at checkout</span>
+                <span className="block text-xs text-text-secondary">
+                  Listed under Offers for everyone. Untick for a private code (influencer, staff, apology): it still works when typed in.
+                </span>
+              </span>
+            </label>
+
             {validationMessage ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
                 {validationMessage}
@@ -411,6 +499,13 @@ export default function CreateCouponModal({
                   </div>
 
                   <div className="flex items-center justify-between gap-3">
+                    <span className="text-text-secondary">Who</span>
+                    <span className="font-medium text-text-primary">
+                      {[firstOrderOnly && "First order", onePerCustomer && "Once each"].filter(Boolean).join(" · ") || "Anyone, any order"}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
                     <span className="text-text-secondary">Expires</span>
                     <span className="font-medium text-text-primary">
                       {expiresLabel}
@@ -455,7 +550,7 @@ export default function CreateCouponModal({
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-primary px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <TicketPercent className="h-4 w-4" />
-            {loading ? "Creating..." : "Create Coupon"}
+            {loading ? "Saving..." : editing ? "Save changes" : "Create Coupon"}
           </button>
         </div>
       </div>

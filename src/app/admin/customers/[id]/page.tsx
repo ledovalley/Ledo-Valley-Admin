@@ -82,7 +82,7 @@ export default function CustomerProfilePage() {
     const { customer, stats, orders } = data;
 
     return (
-        <div className="min-h-screen p-8 space-y-8">
+        <div className="min-h-screen p-0 sm:p-4 lg:p-8 space-y-6 sm:space-y-8">
 
             {/* HEADER */}
             <div className="bg-bg-surface p-6 rounded-2xl border border-border-muted/30">
@@ -105,8 +105,9 @@ export default function CustomerProfilePage() {
             </div>
 
             {/* STATS */}
-            <div className="grid grid-cols-4 gap-6">
-                <StatCard title="Total Orders" value={stats.totalOrders} />
+            <p className="-mb-4 text-xs text-text-secondary">Paid orders only, refunds taken off.</p>
+            <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+                <StatCard title="Paid orders" value={stats.totalOrders} />
                 <StatCard
                     title="Total Spend"
                     value={`₹ ${stats.totalSpend.toFixed(2)}`}
@@ -116,7 +117,7 @@ export default function CustomerProfilePage() {
                     value={`₹ ${stats.averageOrderValue.toFixed(2)}`}
                 />
                 <StatCard
-                    title="Last Order"
+                    title="Last paid order"
                     value={
                         stats.lastOrderDate
                             ? new Date(stats.lastOrderDate).toLocaleDateString()
@@ -126,12 +127,12 @@ export default function CustomerProfilePage() {
             </div>
 
             {/* ORDER HISTORY */}
-            <div className="bg-bg-surface rounded-2xl border border-border-muted/30 overflow-hidden">
+            <div className="bg-bg-surface rounded-2xl border border-border-muted/30 overflow-x-auto">
                 <div className="px-6 py-4 border-b border-border-muted/30 font-medium">
                     Order History
                 </div>
 
-                <table className="w-full text-sm">
+                <table className="w-full min-w-[560px] text-sm">
                     <thead className="bg-bg-dark/20 text-xs uppercase text-gray-600">
                         <tr>
                             <th className="px-6 py-4 text-left">Order #</th>

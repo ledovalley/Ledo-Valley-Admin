@@ -94,12 +94,12 @@ export default function AdminNewsletterPage() {
     };
 
     return (
-        <div className="min-h-screen p-8 space-y-8">
+        <div className="min-h-screen p-0 sm:p-4 lg:p-8 space-y-6 sm:space-y-8">
 
             {/* ================= HEADER ================= */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 className="text-3xl font-semibold tracking-tight">
+                    <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
                         Newsletter Manager
                     </h1>
                     <p className="text-gray-500 text-sm mt-1">
@@ -142,7 +142,7 @@ export default function AdminNewsletterPage() {
 
             {/* ================= CAMPAIGN STATS ================= */}
             {tab === "campaigns" && (
-                <div className="grid grid-cols-4 gap-6">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
                     <div className="bg-bg-surface p-5 rounded-2xl border border-border-muted/20">
                         <p className="text-xs text-gray-500">Total Campaigns</p>
                         <h3 className="text-2xl font-semibold mt-2">
@@ -175,8 +175,8 @@ export default function AdminNewsletterPage() {
 
             {/* ================= SUBSCRIBERS ================= */}
             {tab === "subscribers" && (
-                <div className="bg-bg-surface rounded-2xl border border-border-muted/20 overflow-hidden">
-                    <table className="w-full text-sm">
+                <div className="bg-bg-surface rounded-2xl border border-border-muted/20 overflow-x-auto">
+                    <table className="w-full min-w-[640px] text-sm">
                         <thead className="bg-bg-dark/10 text-gray-600 uppercase text-xs tracking-wider">
                             <tr>
                                 <th className="px-6 py-4 text-left">Email</th>
@@ -232,8 +232,8 @@ export default function AdminNewsletterPage() {
 
             {/* ================= CAMPAIGNS ================= */}
             {tab === "campaigns" && (
-                <div className="bg-bg-surface rounded-2xl border border-border-muted/20 overflow-hidden">
-                    <table className="w-full text-sm">
+                <div className="bg-bg-surface rounded-2xl border border-border-muted/20 overflow-x-auto">
+                    <table className="w-full min-w-[640px] text-sm">
                         <thead className="bg-bg-dark/10 text-gray-600 uppercase text-xs tracking-wider">
                             <tr>
                                 <th className="px-6 py-4 text-left">Subject</th>
@@ -291,11 +291,11 @@ export default function AdminNewsletterPage() {
 
             {/* ================= CREATE MODAL ================= */}
             {showCreate && (
-                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-6">
-                    <div className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden">
+                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
+                    <div className="relative w-full max-w-4xl max-h-[94vh] overflow-y-auto bg-white rounded-3xl shadow-2xl">
 
                         {/* ================= HEADER ================= */}
-                        <div className="flex items-center justify-between px-8 py-6 border-b">
+                        <div className="flex items-center justify-between px-5 py-4 sm:px-8 sm:py-6 border-b">
                             <div>
                                 <h2 className="text-2xl font-semibold">
                                     Create Newsletter Campaign
@@ -314,7 +314,7 @@ export default function AdminNewsletterPage() {
                         </div>
 
                         {/* ================= BODY ================= */}
-                        <div className="px-8 py-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                        <div className="px-5 py-5 sm:px-8 sm:py-6 space-y-6 sm:max-h-[70vh] sm:overflow-y-auto">
 
                             {/* Subject */}
                             <div>
@@ -372,7 +372,7 @@ export default function AdminNewsletterPage() {
                         </div>
 
                         {/* ================= FOOTER ================= */}
-                        <div className="sticky bottom-0 bg-white border-t px-8 py-5 flex justify-between items-center">
+                        <div className="sticky bottom-0 bg-white border-t px-5 py-4 sm:px-8 sm:py-5 flex justify-between items-center gap-3">
 
                             <button
                                 onClick={() => setShowCreate(false)}

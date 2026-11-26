@@ -82,3 +82,13 @@
     /* Chrome, Safari and Opera */
   }
 }
+
+/* Phones: iPhone Safari zooms into any form box with text under 16px.
+   (Outside the Tailwind layers on purpose, so it wins over text-sm.) */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

@@ -16,6 +16,9 @@ import {
   ChevronRight,
   Sparkles,
   Settings,
+  Boxes,
+  Gift,
+  LineChart,
 } from "lucide-react";
 
 const navGroups = [
@@ -43,6 +46,11 @@ const navGroups = [
         icon: Package,
       },
       {
+        label: "Stock",
+        href: "/admin/stock",
+        icon: Boxes,
+      },
+      {
         label: "Orders",
         href: "/admin/orders",
         icon: ShoppingCart,
@@ -56,6 +64,16 @@ const navGroups = [
         label: "Coupons",
         href: "/admin/coupons",
         icon: BadgePercent,
+      },
+      {
+        label: "Referrals",
+        href: "/admin/referrals",
+        icon: Gift,
+      },
+      {
+        label: "Insights",
+        href: "/admin/insights",
+        icon: LineChart,
       },
     ],
   },
