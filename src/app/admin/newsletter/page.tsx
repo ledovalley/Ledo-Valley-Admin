@@ -36,6 +36,24 @@ export default function AdminNewsletterPage() {
     const [htmlContent, setHtmlContent] = useState("");
 
     /* ================= FETCH ================= */
+    const [reloadKey, setReloadKey] = useState(0);
+
+    // While a newsletter is going out, refresh the campaign list every 5 seconds
+    // so the sent / failed counts move.
+    const anySending = campaigns.some((c) => c.status === "SENDING");
+    useEffect(() => {
+        if (tab !== "campaigns" || !anySending) return;
+        const t = setInterval(async () => {
+            try {
+                const { data } = await axios.get("/admin/newsletter/campaigns");
+                setCampaigns(data.campaigns);
+            } catch {
+                // try again next time
+            }
+        }, 5000);
+        return () => clearInterval(t);
+    }, [tab, anySending]);
+
     useEffect(() => {
         const loadData = async () => {
             try {
@@ -60,7 +78,7 @@ export default function AdminNewsletterPage() {
         };
 
         loadData();
-    }, [tab]);
+    }, [tab, reloadKey]);
 
     /* ================= SEND CAMPAIGN ================= */
 
@@ -76,15 +94,18 @@ export default function AdminNewsletterPage() {
 
         try {
             setSending(true);
-            await axios.post("/admin/newsletter/send", {
+            const { data } = await axios.post("/admin/newsletter/send", {
                 subject,
                 htmlContent,
             });
 
-            toastSuccess("Campaign sent.");
+            // Sending carries on in the background; the campaign list shows progress.
+            toastSuccess(data?.message || "Sending started.");
             setShowCreate(false);
             setSubject("");
             setHtmlContent("");
+            setTab("campaigns");
+            setReloadKey((k) => k + 1);
         } catch (error) {
             console.error("SEND ERROR:", error);
             toastError(getErrorMessage(error));
@@ -261,8 +282,16 @@ export default function AdminNewsletterPage() {
                                         <td className="px-6 py-4 font-medium">{c.subject}</td>
 
                                         <td className="px-6 py-4">
-                                            <span className="px-3 py-1 text-xs rounded-full bg-gray-100">
-                                                {c.status}
+                                            <span
+                                                className={`px-3 py-1 text-xs rounded-full ${
+                                                    c.status === "SENDING"
+                                                        ? "bg-amber-100 text-amber-800"
+                                                        : c.status === "FAILED"
+                                                          ? "bg-red-100 text-red-700"
+                                                          : "bg-gray-100"
+                                                }`}
+                                            >
+                                                {c.status === "SENDING" ? "Sending…" : c.status}
                                             </span>
                                         </td>
 

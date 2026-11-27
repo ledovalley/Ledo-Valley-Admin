@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import api from "@/lib/api";
@@ -236,6 +236,18 @@ export default function OrderDetailsPage() {
         if (orderId) fetchOrder();
     }, [orderId, fetchOrder]);
 
+    // Opened from the orders list with "Ship this order → Another way":
+    // go straight to the "ship another way" form (once, then tidy the address).
+    const shipParamUsed = useRef(false);
+    useEffect(() => {
+        if (!order || shipParamUsed.current) return;
+        if (new URLSearchParams(window.location.search).get("ship") !== "other") return;
+        shipParamUsed.current = true;
+        window.history.replaceState(null, "", window.location.pathname);
+        const paid = order.payment.status === "SUCCESS" || order.payment.method === "COD";
+        if (paid && ["PAYMENT_SUCCESS", "READY_TO_SHIP", "PLACED"].includes(order.status)) setShipOpen(true);
+    }, [order]);
+
     const runConfirm = async () => {
         if (!confirm) return;
         try {
@@ -463,6 +475,8 @@ export default function OrderDetailsPage() {
         }
     };
 
+    const [downloadingNote, setDownloadingNote] = useState<number | null>(null);
+
     const handleDownloadInvoice = async () => {
         if (!order) return;
         try {
@@ -483,6 +497,51 @@ export default function OrderDetailsPage() {
             return;
         }
         writePackingSlips(w, [order]);
+    };
+
+    /* ---------- edit delivery address (until the pickup is booked) ---------- */
+    const [addrOpen, setAddrOpen] = useState(false);
+    const [addrSaving, setAddrSaving] = useState(false);
+    const [addrForm, setAddrForm] = useState({ name: "", phone: "", addressLine1: "", addressLine2: "", city: "", state: "", pincode: "" });
+    const openEditAddress = () => {
+        if (!order) return;
+        const a = order.shippingAddress;
+        setAddrForm({
+            name: a?.name || "",
+            phone: a?.phone || "",
+            addressLine1: a?.addressLine1 || "",
+            addressLine2: a?.addressLine2 || "",
+            city: a?.city || "",
+            state: a?.state || "",
+            pincode: a?.pincode || "",
+        });
+        setAddrOpen(true);
+    };
+    const saveAddress = async () => {
+        if (!order) return;
+        try {
+            setAddrSaving(true);
+            const res = await api.patch(`/admin/orders/${order._id}/shipping-address`, addrForm);
+            success(res.data?.message || "Delivery address updated.");
+            setAddrOpen(false);
+            await fetchOrder();
+        } catch (err) {
+            showError(getErrorMessage(err));
+        } finally {
+            setAddrSaving(false);
+        }
+    };
+
+    /* ---------- tracking link (shown at the top of the order) ---------- */
+    const [linkCopied, setLinkCopied] = useState(false);
+    const copyTrackingLink = async (link: string) => {
+        try {
+            await navigator.clipboard.writeText(link);
+            setLinkCopied(true);
+            setTimeout(() => setLinkCopied(false), 1500);
+        } catch {
+            showError("Couldn't copy. Open the tracking page and copy its address.");
+        }
     };
 
     const copyAddress = async () => {
@@ -534,6 +593,17 @@ export default function OrderDetailsPage() {
     const progress = progressIndex(order);
     const cancelled = order.status === "CANCELLED";
     const addr = order.shippingAddress;
+    // Delivery address can be corrected until the pickup is booked or the parcel is sent.
+    const addressEditable =
+        ["PLACED", "PAYMENT_PENDING", "PAYMENT_SUCCESS", "PAYMENT_FAILED"].includes(order.status) &&
+        !order.shipping?.shipmentId &&
+        !order.shipping?.awbCode &&
+        !order.shipping?.manual;
+    const trackLink = order.shipping?.manual
+        ? order.shipping?.trackingUrl || null
+        : order.shipping?.awbCode && order.shipping?.status !== "CANCELLED"
+          ? trackingUrl(order.shipping.awbCode)
+          : null;
     const shipPhone = addr.phone || order.customerSnapshot.phone;
     const isCodPending = order.payment.method === "COD" && order.payment.status === "PENDING";
     const refundPending = cancelled && order.payment.status === "REFUND_PENDING";
@@ -669,6 +739,27 @@ export default function OrderDetailsPage() {
                         </div>
 
                         <div className="flex flex-wrap gap-2">
+                            {trackLink && (
+                                <>
+                                    <a
+                                        href={trackLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 rounded-xl bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-primary/90"
+                                    >
+                                        <Truck className="h-4 w-4" />
+                                        Track parcel ↗
+                                    </a>
+                                    <button
+                                        onClick={() => copyTrackingLink(trackLink)}
+                                        className="inline-flex items-center gap-2 rounded-xl border border-brand-primary/30 px-3 py-2.5 text-sm font-medium text-brand-primary transition hover:bg-brand-primary/5"
+                                        aria-label="Copy tracking link"
+                                    >
+                                        {linkCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                                        {linkCopied ? "Copied" : "Copy link"}
+                                    </button>
+                                </>
+                            )}
                             <button
                                 onClick={handlePrintSlip}
                                 className="inline-flex items-center gap-2 rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-black/5"
@@ -940,16 +1031,21 @@ export default function OrderDetailsPage() {
                                                     </span>
                                                     <button
                                                         type="button"
+                                                        disabled={downloadingNote === i}
                                                         onClick={async () => {
                                                             try {
+                                                                setDownloadingNote(i);
                                                                 await downloadCreditNote(order._id, i, note.number);
                                                             } catch (err) {
                                                                 showError(getErrorMessage(err));
+                                                            } finally {
+                                                                setDownloadingNote(null);
                                                             }
                                                         }}
-                                                        className="text-sm font-medium text-brand-primary hover:underline"
+                                                        className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary hover:underline disabled:cursor-wait disabled:opacity-70 disabled:no-underline"
                                                     >
-                                                        Download
+                                                        {downloadingNote === i && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                                        {downloadingNote === i ? "Preparing…" : "Download"}
                                                     </button>
                                                 </li>
                                             ))}
@@ -966,13 +1062,24 @@ export default function OrderDetailsPage() {
                             title="Ship to"
                             icon={<MapPin className="h-4 w-4" />}
                             action={
-                                <button
-                                    onClick={copyAddress}
-                                    className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-2.5 py-1.5 text-xs font-medium text-text-primary transition hover:bg-black/5"
-                                >
-                                    {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
-                                    {copied ? "Copied" : "Copy"}
-                                </button>
+                                <div className="flex gap-1.5">
+                                    {addressEditable && (
+                                        <button
+                                            onClick={openEditAddress}
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-2.5 py-1.5 text-xs font-medium text-text-primary transition hover:bg-black/5"
+                                        >
+                                            <Pencil className="h-3.5 w-3.5" />
+                                            Edit
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={copyAddress}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-black/10 px-2.5 py-1.5 text-xs font-medium text-text-primary transition hover:bg-black/5"
+                                    >
+                                        {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                                        {copied ? "Copied" : "Copy"}
+                                    </button>
+                                </div>
                             }
                         >
                             <div className="space-y-1 text-sm">
@@ -1033,27 +1140,26 @@ export default function OrderDetailsPage() {
                                         </div>
                                     )}
                                 </dl>
-                                {order.shipping.manual ? (
-                                    order.shipping.trackingUrl ? (
+                                {trackLink ? (
+                                    <div className="mt-4 flex flex-wrap gap-2">
                                         <a
-                                            href={order.shipping.trackingUrl}
+                                            href={trackLink}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary hover:underline"
+                                            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-primary/90"
                                         >
-                                            Open {order.shipping.courierName || "courier"} tracking ↗
+                                            <Truck className="h-4 w-4" />
+                                            {order.shipping.manual ? `Open ${order.shipping.courierName || "courier"} tracking ↗` : "Track parcel ↗"}
                                         </a>
-                                    ) : null
-                                ) : order.shipping.awbCode ? (
-                                    <a
-                                        href={trackingUrl(order.shipping.awbCode)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary hover:underline"
-                                    >
-                                        Track parcel ↗
-                                    </a>
-                                ) : (
+                                        <button
+                                            onClick={() => copyTrackingLink(trackLink)}
+                                            className="inline-flex items-center gap-2 rounded-xl border border-brand-primary/30 px-3 py-2.5 text-sm font-medium text-brand-primary transition hover:bg-brand-primary/5"
+                                        >
+                                            {linkCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                                            {linkCopied ? "Copied" : "Copy link"}
+                                        </button>
+                                    </div>
+                                ) : order.shipping.manual ? null : (
                                     <p className="mt-3 text-xs text-text-secondary">
                                         No AWB yet. Check the order in your Shiprocket dashboard.
                                     </p>
@@ -1204,6 +1310,60 @@ export default function OrderDetailsPage() {
                 onConfirm={runConfirm}
             />
 
+            {addrOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4">
+                    <div role="dialog" aria-modal="true" aria-labelledby="addr-title" className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
+                        <h3 id="addr-title" className="text-lg font-semibold text-text-primary">Edit delivery address for #{order.orderNumber}</h3>
+                        <p className="mt-1 text-sm text-text-secondary">
+                            Only this order changes (not the customer&apos;s saved addresses). The change is recorded in the order history.
+                        </p>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            {([
+                                ["name", "Name", "sm:col-span-1"],
+                                ["phone", "Phone (10 digits)", "sm:col-span-1"],
+                                ["addressLine1", "Address line 1", "sm:col-span-2"],
+                                ["addressLine2", "Address line 2 (optional)", "sm:col-span-2"],
+                                ["city", "City", "sm:col-span-1"],
+                                ["state", "State", "sm:col-span-1"],
+                                ["pincode", "Pincode", "sm:col-span-1"],
+                            ] as const).map(([key, label, span]) => (
+                                <label key={key} className={`block text-sm ${span}`}>
+                                    <span className="mb-1 block font-medium text-text-primary">{label}</span>
+                                    <input
+                                        value={addrForm[key]}
+                                        onChange={(e) => setAddrForm((f) => ({ ...f, [key]: e.target.value }))}
+                                        inputMode={key === "phone" || key === "pincode" ? "numeric" : undefined}
+                                        className="w-full rounded-xl border border-black/10 px-3 py-2.5 text-sm outline-none transition focus:border-brand-primary focus:ring-4 focus:ring-brand-primary/10"
+                                    />
+                                </label>
+                            ))}
+                        </div>
+                        {addrForm.state.trim().toLowerCase() !== (order.shippingAddress?.state || "").trim().toLowerCase() && (
+                            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                The state is changing, so the invoice&apos;s GST split (CGST + SGST in Assam, IGST elsewhere) is worked out again.
+                            </p>
+                        )}
+                        <div className="mt-5 flex justify-end gap-3">
+                            <button
+                                onClick={() => setAddrOpen(false)}
+                                disabled={addrSaving}
+                                className="rounded-xl px-4 py-2 text-sm font-medium text-text-secondary transition hover:bg-black/5 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={saveAddress}
+                                disabled={addrSaving}
+                                className="inline-flex items-center gap-2 rounded-xl bg-brand-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-primary/90 disabled:opacity-50"
+                            >
+                                {addrSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                                Save address
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {cancelOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4">
                     <div role="dialog" aria-modal="true" className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6">
@@ -1213,7 +1373,21 @@ export default function OrderDetailsPage() {
                             {order.shipping?.shipmentId && " A Shiprocket shipment already exists for this order, so also cancel it in Shiprocket."}
                             {order.payment.status === "SUCCESS" && " A refund will be started automatically for this prepaid order."}
                         </p>
-                        <label className="mb-2 mt-4 block text-sm font-medium text-text-primary">Reason</label>
+                        <label className="mb-2 mt-4 block text-sm font-medium text-text-primary">
+                            Reason <span className="font-normal text-text-secondary">(the customer gets an email with this reason)</span>
+                        </label>
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                            {["Out of stock", "Cancelled at your request", "We can't deliver to this pincode"].map((r) => (
+                                <button
+                                    key={r}
+                                    type="button"
+                                    onClick={() => setCancelRemarks(r)}
+                                    className="rounded-full border border-black/10 px-3 py-1 text-xs text-text-primary transition hover:bg-black/5"
+                                >
+                                    {r}
+                                </button>
+                            ))}
+                        </div>
                         <textarea
                             autoFocus
                             value={cancelRemarks}

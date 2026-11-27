@@ -259,6 +259,29 @@ export default function OrdersPage() {
         });
     };
 
+    // "Ship this order" asks how, as on the order page: a Shiprocket pickup
+    // (booked from here) or another way (opens the order on its form).
+    const [shipChoice, setShipChoice] = useState<{ order: Order; step: NextStep } | null>(null);
+    const onStep = (order: Order, step: NextStep) =>
+        step.to === "READY_TO_SHIP" ? setShipChoice({ order, step }) : advanceOne(order, step);
+    const stepLabel = (step: NextStep) => (step.to === "READY_TO_SHIP" ? "Ship this order" : step.label);
+
+    const bookPickupFromList = async () => {
+        if (!shipChoice) return;
+        const { order } = shipChoice;
+        setShipChoice(null);
+        try {
+            setRowBusy(order._id);
+            await api.patch(`/admin/orders/${order._id}/status`, { status: "READY_TO_SHIP" });
+            success(`Shiprocket pickup booked for #${order.orderNumber}.`);
+            refreshAll();
+        } catch (err) {
+            toastError(getErrorMessage(err));
+        } finally {
+            setRowBusy(null);
+        }
+    };
+
     const advanceSelected = (step: NextStep) => {
         const targets = [...selectedOrders];
         setConfirm({
@@ -703,12 +726,12 @@ export default function OrdersPage() {
                                             <div className="mt-3 flex items-center gap-2">
                                                 {step ? (
                                                     <button
-                                                        onClick={() => advanceOne(order, step)}
+                                                        onClick={() => onStep(order, step)}
                                                         disabled={isBusy || busy}
                                                         className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-white transition disabled:opacity-50 ${step.to === "DELIVERED" ? "bg-green-600" : "bg-brand-primary"}`}
                                                     >
                                                         {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-                                                        {step.label}
+                                                        {stepLabel(step)}
                                                     </button>
                                                 ) : order.payment.status === "REFUND_PENDING" || order.status === "RETURN_REQUESTED" ? (
                                                     <button
@@ -824,12 +847,12 @@ export default function OrdersPage() {
                                                 <div className="flex items-center justify-end gap-2">
                                                     {step ? (
                                                         <button
-                                                            onClick={() => advanceOne(order, step)}
+                                                            onClick={() => onStep(order, step)}
                                                             disabled={isBusy || busy}
                                                             className={`inline-flex min-w-32 items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold text-white transition disabled:opacity-50 ${step.to === "DELIVERED" ? "bg-green-600 hover:bg-green-700" : "bg-brand-primary hover:bg-brand-primary/90"}`}
                                                         >
                                                             {isBusy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                                                            {step.label}
+                                                            {stepLabel(step)}
                                                         </button>
                                                     ) : order.payment.status === "REFUND_PENDING" ? (
                                                         <button
@@ -900,6 +923,56 @@ export default function OrdersPage() {
                         Next
                         <ChevronRight className="h-4 w-4" />
                     </button>
+                </div>
+            )}
+
+            {shipChoice && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4"
+                    onClick={() => setShipChoice(null)}
+                >
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="ship-choice-title"
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-xl sm:p-6"
+                    >
+                        <h3 id="ship-choice-title" className="text-lg font-semibold text-text-primary">
+                            How are you sending #{shipChoice.order.orderNumber}?
+                        </h3>
+                        <p className="mt-1 text-sm text-text-secondary">Have the parcel packed first.</p>
+                        <div className="mt-5 grid gap-3">
+                            <button
+                                onClick={bookPickupFromList}
+                                className="rounded-2xl border border-black/10 p-4 text-left transition hover:border-brand-primary hover:bg-brand-primary/5"
+                            >
+                                <span className="block font-semibold text-text-primary">Shiprocket pickup</span>
+                                <span className="mt-0.5 block text-sm text-text-secondary">
+                                    Creates the shipment, assigns a courier and books the pickup. Tracking updates automatically.
+                                </span>
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const id = shipChoice.order._id;
+                                    setShipChoice(null);
+                                    router.push(`/admin/orders/${id}?ship=other`);
+                                }}
+                                className="rounded-2xl border border-black/10 p-4 text-left transition hover:border-brand-primary hover:bg-brand-primary/5"
+                            >
+                                <span className="block font-semibold text-text-primary">Another way</span>
+                                <span className="mt-0.5 block text-sm text-text-secondary">
+                                    India Post, another courier, or delivered by hand. Opens the order to enter the courier and tracking number (optional).
+                                </span>
+                            </button>
+                        </div>
+                        <button
+                            onClick={() => setShipChoice(null)}
+                            className="mt-4 w-full rounded-xl border border-black/10 px-4 py-2.5 text-sm font-medium text-text-primary hover:bg-gray-50"
+                        >
+                            Cancel
+                        </button>
+                    </div>
                 </div>
             )}
 
